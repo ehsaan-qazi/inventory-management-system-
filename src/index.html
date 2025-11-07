@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fish Market Inventory - Dashboard</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <h2>FishMarket</h2>
+            </div>
+            <nav class="nav-menu">
+                <a href="index.html" class="nav-item active">
+                    <span class="icon">🏠</span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="pages/customers.html" class="nav-item">
+                    <span class="icon">👥</span>
+                    <span>Customers</span>
+                </a>
+                <a href="pages/transactions.html" class="nav-item">
+                    <span class="icon">💰</span>
+                    <span>Transactions</span>
+                </a>
+                <a href="pages/fish-categories.html" class="nav-item">
+                    <span class="icon">🐟</span>
+                    <span>Fish Categories</span>
+                </a>
+                <a href="pages/reports.html" class="nav-item">
+                    <span class="icon">📊</span>
+                    <span>Reports</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="header">
+                <div class="search-bar">
+                    <input type="text" id="searchInput" placeholder="Search Customer Name, ID, or Phone Number">
+                    <button class="search-btn">🔍</button>
+                </div>
+                <div class="user-info">
+                    <span class="user-name">Admin</span>
+                </div>
+            </header>
+
+            <section class="content">
+                <h1>Overview</h1>
+                
+                <!-- Metric Cards -->
+                <div class="metrics-grid">
+                    <div class="metric-card blue">
+                        <div class="metric-label">Today's Sales</div>
+                        <div class="metric-value" id="todaySales">₹0</div>
+                    </div>
+                    <div class="metric-card yellow">
+                        <div class="metric-label">Pending Bills</div>
+                        <div class="metric-value" id="pendingBills">0</div>
+                    </div>
+                    <div class="metric-card purple">
+                        <div class="metric-label">Total Customers</div>
+                        <div class="metric-value" id="totalCustomers">0</div>
+                    </div>
+                    <div class="metric-card green">
+                        <div class="metric-label">Fish Categories</div>
+                        <div class="metric-value" id="fishCategories">0</div>
+                    </div>
+                </div>
+
+                <!-- Recent Transactions -->
+                <div class="table-section">
+                    <div class="section-header">
+                        <h2>Recent Transactions</h2>
+                        <button class="btn-primary" onclick="window.location.href='pages/transactions.html'">
+                            + New Transaction
+                        </button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Transaction ID</th>
+                                <th>Customer Name</th>
+                                <th>Date</th>
+                                <th>Time</th>
+                                <th>Total Amount</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentTransactions">
+                            <tr>
+                                <td colspan="6" class="no-data">Loading transactions...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
+
