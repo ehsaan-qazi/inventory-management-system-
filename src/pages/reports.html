@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fish Market Inventory - Reports</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <h2>FishMarket</h2>
+            </div>
+            <nav class="nav-menu">
+                <a href="../index.html" class="nav-item">
+                    <span class="icon">🏠</span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="customers.html" class="nav-item">
+                    <span class="icon">👥</span>
+                    <span>Customers</span>
+                </a>
+                <a href="transactions.html" class="nav-item">
+                    <span class="icon">💰</span>
+                    <span>Transactions</span>
+                </a>
+                <a href="fish-categories.html" class="nav-item">
+                    <span class="icon">🐟</span>
+                    <span>Fish Categories</span>
+                </a>
+                <a href="reports.html" class="nav-item active">
+                    <span class="icon">📊</span>
+                    <span>Reports</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="header">
+                <div class="search-bar">
+                    <input type="text" id="searchInput" placeholder="Search reports...">
+                    <button class="search-btn">🔍</button>
+                </div>
+                <div class="user-info">
+                    <span class="user-name">Admin</span>
+                </div>
+            </header>
+
+            <section class="content">
+                <h1>Sales Reports</h1>
+
+                <!-- Alert container -->
+                <div id="alertContainer"></div>
+
+                <!-- Date Filter -->
+                <div class="table-section">
+                    <div class="section-header">
+                        <h2>Filter Reports</h2>
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="startDate">Start Date</label>
+                                <input type="date" id="startDate" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label for="endDate">End Date</label>
+                                <input type="date" id="endDate" class="form-control">
+                            </div>
+                        </div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px;">
+                            <button class="btn btn-primary" onclick="loadReportByDateRange()">Generate Report</button>
+                            <button class="btn btn-outline" onclick="loadToday()">Today</button>
+                            <button class="btn btn-outline" onclick="loadThisWeek()">This Week</button>
+                            <button class="btn btn-outline" onclick="loadThisMonth()">This Month</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Summary Cards -->
+                <div class="metrics-grid" style="margin-bottom: 30px;">
+                    <div class="metric-card blue">
+                        <div class="metric-label">Total Sales</div>
+                        <div class="metric-value" id="totalSales">Rs.0</div>
+                    </div>
+                    <div class="metric-card green">
+                        <div class="metric-label">Cash Received</div>
+                        <div class="metric-value" id="cashReceived">Rs.0</div>
+                    </div>
+                    <div class="metric-card yellow">
+                        <div class="metric-label">Current Outstanding</div>
+                        <div class="metric-value" id="totalOutstanding">Rs.0</div>
+                    </div>
+                    <div class="metric-card purple">
+                        <div class="metric-label">Transactions</div>
+                        <div class="metric-value" id="transactionCount">0</div>
+                    </div>
+                </div>
+
+                <!-- Daily Summary Report -->
+                <div class="table-section">
+                    <div class="section-header">
+                        <h2>Daily Summary</h2>
+                        <button class="btn btn-outline btn-small" onclick="exportToCSV()">📥 Export CSV</button>
+                    </div>
+                    <table class="data-table" id="reportTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Total Sales</th>
+                                <th>Cash Received</th>
+                                <th>Outstanding Change</th>
+                                <th>Transactions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reportBody">
+                            <tr>
+                                <td colspan="5" class="no-data">Select date range to generate report</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Outstanding Customers -->
+                <div class="table-section">
+                    <div class="section-header">
+                        <h2>Customers with Outstanding Balance</h2>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Customer Name</th>
+                                <th>Phone</th>
+                                <th>Outstanding Amount</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="outstandingCustomers">
+                            <tr>
+                                <td colspan="4" class="no-data">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Prepaid Customers -->
+                <div class="table-section">
+                    <div class="section-header">
+                        <h2>Customers with Prepaid Balance</h2>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Customer Name</th>
+                                <th>Phone</th>
+                                <th>Prepaid Amount</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="prepaidCustomers">
+                            <tr>
+                                <td colspan="4" class="no-data">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="../js/reports.js"></script>
+</body>
+</html>
+

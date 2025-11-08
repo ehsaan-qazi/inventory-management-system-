@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fish Market Inventory - Customers</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <h2>FishMarket</h2>
+            </div>
+            <nav class="nav-menu">
+                <a href="../index.html" class="nav-item">
+                    <span class="icon">🏠</span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="customers.html" class="nav-item active">
+                    <span class="icon">👥</span>
+                    <span>Customers</span>
+                </a>
+                <a href="transactions.html" class="nav-item">
+                    <span class="icon">💰</span>
+                    <span>Transactions</span>
+                </a>
+                <a href="fish-categories.html" class="nav-item">
+                    <span class="icon">🐟</span>
+                    <span>Fish Categories</span>
+                </a>
+                <a href="reports.html" class="nav-item">
+                    <span class="icon">📊</span>
+                    <span>Reports</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="header">
+                <div class="search-bar">
+                    <input type="text" id="searchInput" placeholder="Search Customer Name, ID, or Phone Number">
+                    <button class="search-btn" onclick="searchCustomers()">🔍</button>
+                </div>
+                <div class="user-info">
+                    <span class="user-name">Admin</span>
+                </div>
+            </header>
+
+            <section class="content">
+                <h1>Customer Management</h1>
+
+                <!-- Alert container -->
+                <div id="alertContainer"></div>
+                
+                <!-- Customers Table -->
+                <div class="table-section">
+                    <div class="section-header">
+                        <h2>All Customers</h2>
+                        <button class="btn-primary" onclick="openAddCustomerModal()">
+                            + Add Customer
+                        </button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Phone</th>
+                                <th>Address</th>
+                                <th>Balance</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="customersTable">
+                            <tr>
+                                <td colspan="7" class="no-data">Loading customers...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Add/Edit Customer Modal -->
+    <div class="modal" id="customerModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Add Customer</h3>
+                <button class="modal-close" onclick="closeCustomerModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="customerForm">
+                    <input type="hidden" id="customerId">
+                    
+                    <div class="form-group">
+                        <label for="customerName">Customer Name *</label>
+                        <input type="text" id="customerName" class="form-control" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="customerPhone">Phone Number</label>
+                        <input type="tel" id="customerPhone" class="form-control">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="customerAddress">Address</label>
+                        <textarea id="customerAddress" class="form-control"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="customerBalance">Initial Balance (Optional)</label>
+                        <input type="number" id="customerBalance" class="form-control" step="0.01" value="0">
+                        <small style="color: var(--text-secondary); font-size: 12px;">
+                            Positive = Prepaid, Negative = Outstanding, Zero = Balanced
+                        </small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeCustomerModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveCustomer()">Save Customer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Customer Details Modal -->
+    <div class="modal" id="viewCustomerModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Customer Details</h3>
+                <button class="modal-close" onclick="closeViewCustomerModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 20px;">
+                    <h4 style="margin-bottom: 15px; color: var(--text-primary);" id="viewCustomerName"></h4>
+                    <p style="margin: 5px 0;"><strong>Phone:</strong> <span id="viewCustomerPhone"></span></p>
+                    <p style="margin: 5px 0;"><strong>Address:</strong> <span id="viewCustomerAddress"></span></p>
+                    <p style="margin: 5px 0;"><strong>Balance:</strong> <span id="viewCustomerBalance"></span></p>
+                    <p style="margin: 5px 0;"><strong>Joined:</strong> <span id="viewCustomerDate"></span></p>
+                </div>
+
+                <h4 style="margin-top: 30px; margin-bottom: 15px; color: var(--text-primary);">Transaction History</h4>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Amount</th>
+                            <th>Paid</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="customerTransactions">
+                        <tr>
+                            <td colspan="4" class="no-data">No transactions yet</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeViewCustomerModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/customers.js"></script>
+</body>
+</html>
+

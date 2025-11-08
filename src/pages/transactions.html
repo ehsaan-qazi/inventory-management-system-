@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fish Market Inventory - Transactions</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <h2>FishMarket</h2>
+            </div>
+            <nav class="nav-menu">
+                <a href="../index.html" class="nav-item">
+                    <span class="icon">🏠</span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="customers.html" class="nav-item">
+                    <span class="icon">👥</span>
+                    <span>Customers</span>
+                </a>
+                <a href="transactions.html" class="nav-item active">
+                    <span class="icon">💰</span>
+                    <span>Transactions</span>
+                </a>
+                <a href="fish-categories.html" class="nav-item">
+                    <span class="icon">🐟</span>
+                    <span>Fish Categories</span>
+                </a>
+                <a href="reports.html" class="nav-item">
+                    <span class="icon">📊</span>
+                    <span>Reports</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="header">
+                <div class="search-bar">
+                    <input type="text" id="searchInput" placeholder="Search transactions...">
+                    <button class="search-btn">🔍</button>
+                </div>
+                <div class="user-info">
+                    <span class="user-name">Admin</span>
+                </div>
+            </header>
+
+            <section class="content">
+                <h1>Transactions</h1>
+
+                <!-- Alert container -->
+                <div id="alertContainer"></div>
+
+                <!-- New Transaction Form -->
+                <div class="table-section">
+                    <div class="section-header">
+                        <h2>Create New Bill</h2>
+                        <button class="btn btn-outline" onclick="toggleTransactionForm()">
+                            <span id="toggleIcon">▼</span> Toggle Form
+                        </button>
+                    </div>
+                    
+                    <div id="transactionForm" style="display: block;">
+                        <div class="form-row" style="margin-bottom: 20px;">
+                            <div class="form-group">
+                                <label for="customerSearch">Search Customer *</label>
+                                <div style="position: relative;">
+                                    <input type="text" id="customerSearch" class="form-control" placeholder="Type customer name or phone...">
+                                    <input type="hidden" id="customerId">
+                                    <div id="customerSuggestions" class="search-suggestions"></div>
+                                </div>
+                                <small style="color: var(--text-secondary); font-size: 12px;">
+                                    Or <a href="javascript:showAllCustomers()" style="color: var(--primary-color);">view all customers</a>
+                                </small>
+                            </div>
+                            <div class="form-group">
+                                <label>Customer Balance</label>
+                                <div id="customerBalance" style="padding: 10px; background: #f5f7fa; border-radius: 8px; font-weight: 600;">
+                                    Search and select a customer
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Items Section -->
+                        <h3 style="margin: 20px 0 15px; font-size: 18px;">Bill Items</h3>
+                        <table class="data-table" style="margin-bottom: 20px;">
+                            <thead>
+                                <tr>
+                                    <th>Fish Type</th>
+                                    <th>Weight (KG)</th>
+                                    <th>Price/KG</th>
+                                    <th>Subtotal</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="itemsTable">
+                                <!-- Items will be added here -->
+                            </tbody>
+                        </table>
+
+                        <!-- Add Item Form -->
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                            <h4 style="margin-bottom: 15px; font-size: 16px;">Add Item to Bill</h4>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="fishCategoryId">Fish Type</label>
+                                    <select id="fishCategoryId" class="form-control" onchange="updateItemPrice()">
+                                        <option value="">-- Select Fish --</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="weight">Weight (KG)</label>
+                                    <input type="number" id="weight" class="form-control" step="0.01" min="0.01" oninput="calculateItemSubtotal()">
+                                </div>
+                                <div class="form-group">
+                                    <label for="pricePerKg">Price per KG (Rs.)</label>
+                                    <input type="number" id="pricePerKg" class="form-control" step="0.01" readonly>
+                                </div>
+                                <div class="form-group">
+                                    <label for="itemSubtotal">Subtotal (Rs.)</label>
+                                    <input type="text" id="itemSubtotal" class="form-control" readonly value="0.00">
+                                </div>
+                            </div>
+                            <button class="btn btn-primary" onclick="addItem()">+ Add Item</button>
+                        </div>
+
+                        <!-- Totals and Payment -->
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Total Amount (Rs.)</label>
+                                    <input type="text" id="totalAmount" class="form-control" readonly value="0.00" style="font-size: 18px; font-weight: 700;">
+                                </div>
+                                <div class="form-group">
+                                    <label for="paidAmount">Paid Amount (Rs.)</label>
+                                    <input type="number" id="paidAmount" class="form-control" step="0.01" min="0" value="0" oninput="calculateBalance()">
+                                </div>
+                                <div class="form-group">
+                                    <label>Outstanding/Prepaid (Rs.)</label>
+                                    <input type="text" id="balanceChange" class="form-control" readonly value="0.00" style="font-weight: 600;">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="notes">Notes (Optional)</label>
+                                <textarea id="notes" class="form-control" placeholder="Add any notes or remarks..."></textarea>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                            <button class="btn btn-secondary" onclick="clearForm()">Clear Form</button>
+                            <button class="btn btn-primary" onclick="saveTransaction()">💾 Save Transaction</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Transactions -->
+                <div class="table-section">
+                    <div class="section-header">
+                        <h2>Recent Transactions</h2>
+                        <button class="btn btn-outline btn-small" onclick="loadTransactions()">🔄 Refresh</button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Bill #</th>
+                                <th>Date</th>
+                                <th>Customer</th>
+                                <th>Total</th>
+                                <th>Paid</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactionsTable">
+                            <tr>
+                                <td colspan="7" class="no-data">Loading transactions...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- View Bill Modal -->
+    <div class="modal" id="viewBillModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Bill Details</h3>
+                <button class="modal-close" onclick="closeViewBillModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div id="billContent">
+                    <!-- Bill content will be loaded here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeViewBillModal()">Close</button>
+                <button class="btn btn-primary" onclick="printBill()">🖨️ Print Bill</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/transactions.js"></script>
+</body>
+</html>
+

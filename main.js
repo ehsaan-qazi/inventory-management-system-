@@ -1,7 +1,9 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const FishMarketDB = require('./src/js/database');
 
 let mainWindow;
+let db;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -14,7 +16,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
     },
-    icon: path.join(__dirname, 'src/assets/icon.png'),
+    icon: path.join(__dirname, 'src/assets/tuna.ico'),
     show: false
   });
 
@@ -34,6 +36,13 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Initialize database
+  db = new FishMarketDB();
+  console.log('Database initialized');
+
+  // Set up IPC handlers
+  setupIPCHandlers();
+
   createWindow();
 
   app.on('activate', () => {
@@ -44,14 +53,95 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  if (db) {
+    db.close();
+  }
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
 
-// IPC handlers for database operations will be added here
-// Example:
-// ipcMain.handle('db:getCustomers', async () => {
-//   return await db.getCustomers();
-// });
+// IPC Handlers
+function setupIPCHandlers() {
+  // Customer operations
+  ipcMain.handle('db:getCustomers', async () => {
+    return db.getAllCustomers();
+  });
+
+  ipcMain.handle('db:getCustomerById', async (event, id) => {
+    return db.getCustomerById(id);
+  });
+
+  ipcMain.handle('db:addCustomer', async (event, customer) => {
+    return db.addCustomer(customer);
+  });
+
+  ipcMain.handle('db:updateCustomer', async (event, id, customer) => {
+    return db.updateCustomer(id, customer);
+  });
+
+  ipcMain.handle('db:deleteCustomer', async (event, id) => {
+    return db.deleteCustomer(id);
+  });
+
+  ipcMain.handle('db:searchCustomers', async (event, query) => {
+    return db.searchCustomers(query);
+  });
+
+  // Fish category operations
+  ipcMain.handle('db:getFishCategories', async () => {
+    return db.getAllFishCategories();
+  });
+
+  ipcMain.handle('db:getFishCategoryById', async (event, id) => {
+    return db.getFishCategoryById(id);
+  });
+
+  ipcMain.handle('db:addFishCategory', async (event, category) => {
+    return db.addFishCategory(category);
+  });
+
+  ipcMain.handle('db:updateFishCategory', async (event, id, category) => {
+    return db.updateFishCategory(id, category);
+  });
+
+  ipcMain.handle('db:toggleFishCategory', async (event, id, active) => {
+    return db.toggleFishCategory(id, active);
+  });
+
+  // Transaction operations
+  ipcMain.handle('db:getTransactions', async (event, limit) => {
+    return db.getTransactions(limit);
+  });
+
+  ipcMain.handle('db:getTransactionById', async (event, id) => {
+    return db.getTransactionById(id);
+  });
+
+  ipcMain.handle('db:getTransactionsByCustomer', async (event, customerId) => {
+    return db.getTransactionsByCustomer(customerId);
+  });
+
+  ipcMain.handle('db:addTransaction', async (event, transaction) => {
+    return db.addTransaction(transaction);
+  });
+
+  // Report operations
+  ipcMain.handle('db:getDailySummary', async (event, date) => {
+    return db.getDailySummary(date);
+  });
+
+  ipcMain.handle('db:getReportByDateRange', async (event, startDate, endDate) => {
+    return db.getReportByDateRange(startDate, endDate);
+  });
+
+  ipcMain.handle('db:getDashboardStats', async () => {
+    return db.getDashboardStats();
+  });
+
+  // Utility operations
+  ipcMain.handle('db:backup', async () => {
+    return db.backup();
+  });
+}
 

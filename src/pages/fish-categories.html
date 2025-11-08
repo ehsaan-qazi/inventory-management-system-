@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fish Market Inventory - Fish Categories</title>
+    <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <h2>FishMarket</h2>
+            </div>
+            <nav class="nav-menu">
+                <a href="../index.html" class="nav-item">
+                    <span class="icon">🏠</span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="customers.html" class="nav-item">
+                    <span class="icon">👥</span>
+                    <span>Customers</span>
+                </a>
+                <a href="transactions.html" class="nav-item">
+                    <span class="icon">💰</span>
+                    <span>Transactions</span>
+                </a>
+                <a href="fish-categories.html" class="nav-item active">
+                    <span class="icon">🐟</span>
+                    <span>Fish Categories</span>
+                </a>
+                <a href="reports.html" class="nav-item">
+                    <span class="icon">📊</span>
+                    <span>Reports</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="header">
+                <div class="search-bar">
+                    <input type="text" id="searchInput" placeholder="Search fish category...">
+                    <button class="search-btn" onclick="searchFish()">🔍</button>
+                </div>
+                <div class="user-info">
+                    <span class="user-name">Admin</span>
+                </div>
+            </header>
+
+            <section class="content">
+                <h1>Fish Categories</h1>
+
+                <!-- Alert container -->
+                <div id="alertContainer"></div>
+                
+                <!-- Fish Categories Table -->
+                <div class="table-section">
+                    <div class="section-header">
+                        <h2>All Fish Categories</h2>
+                        <button class="btn-primary" onclick="openAddFishModal()">
+                            + Add Fish Category
+                        </button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Fish Name</th>
+                                <th>Price per KG</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fishTable">
+                            <tr>
+                                <td colspan="5" class="no-data">Loading fish categories...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Add/Edit Fish Modal -->
+    <div class="modal" id="fishModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Add Fish Category</h3>
+                <button class="modal-close" onclick="closeFishModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="fishForm">
+                    <input type="hidden" id="fishId">
+                    
+                    <div class="form-group">
+                        <label for="fishName">Fish Name *</label>
+                        <input type="text" id="fishName" class="form-control" required placeholder="e.g., Rohu, Catla, Hilsa">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="fishPrice">Price per KG (Rs.) *</label>
+                        <input type="number" id="fishPrice" class="form-control" step="0.01" min="0" required>
+                    </div>
+                    
+                    <div class="form-group" id="statusGroup" style="display: none;">
+                        <label>
+                            <input type="checkbox" id="fishActive" checked>
+                            Active (Available for sale)
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeFishModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveFish()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/fish-categories.js"></script>
+</body>
+</html>
+

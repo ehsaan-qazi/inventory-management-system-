@@ -32,6 +32,8 @@ npm run build:win
 
 The built application will be in the `dist/` folder.
 
+For detailed build instructions, see [build-instructions.md](build-instructions.md).
+
 ## Project Structure
 
 ```
@@ -63,6 +65,23 @@ Fish-Project/
 3. **Create Transaction**: Select customer, add fish items, calculate bill
 4. **Track Balances**: System automatically tracks outstanding/prepaid amounts
 5. **View Reports**: Check daily summaries and sales reports
+
+### Dashboard Navigation
+
+Click on any metric card to navigate to the relevant page:
+- **Today's Sales** → Reports page
+- **Pending Bills** → Customers with outstanding balances
+- **Total Customers** → All customers
+- **Fish Categories** → Fish management
+
+### Outstanding Balance Tracking
+
+The system now correctly tracks outstanding balances:
+- When a customer's outstanding is cleared (balance becomes 0), reports will reflect this
+- Outstanding in daily reports shows NET outstanding created that day
+- Current outstanding customers are shown in the Reports page
+
+**Note**: If upgrading from an older version with existing data, the outstanding balance logic has been improved. New transactions will use the correct calculation automatically.
 
 ## License
 
