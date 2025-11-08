@@ -11,6 +11,20 @@ A desktop application built with Electron for managing fish market inventory, cu
 - SQLite database for reliable data storage
 - Portable across Windows PCs
 
+## Screenshots
+
+### Dashboard
+![Dashboard](.github/images/Dashboard.png)
+
+### Customer Management
+![Customer Management](.github/images/customers.png)
+
+### Transaction/Billing
+![Transactions](.github/images/transactions.png)
+
+### Reports
+![Reports](.github/images/report.png)
+
 ## Installation
 
 1. Install dependencies:
