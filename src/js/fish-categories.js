@@ -34,14 +34,14 @@ function displayFishCategories(fishList) {
       <tr style="${!fish.active ? 'opacity: 0.6;' : ''}">
         <td>#${fish.id}</td>
         <td>${fish.name}</td>
-        <td>Rs.${parseFloat(fish.price_per_kg).toFixed(2)}</td>
+        <td>Rs.${parseFloat(fish.price_per_maund).toFixed(2)}</td>
         <td><span class="status-badge ${statusClass}">${statusText}</span></td>
         <td class="action-buttons">
-          <button class="action-btn edit" onclick="editFish(${fish.id})" title="Edit">✏️</button>
+          <button class="action-btn edit" onclick="editFish(${fish.id})" title="Edit"><img src="../assets/edit.png" alt="Edit" style="width: 16px; height: 16px;"></button>
           <button class="action-btn ${fish.active ? 'delete' : 'edit'}" 
                   onclick="toggleFishStatus(${fish.id}, ${!fish.active})" 
                   title="${fish.active ? 'Deactivate' : 'Activate'}">
-            ${fish.active ? '❌' : '✅'}
+            ${fish.active ? '<img src="../assets/delete.png" alt="Deactivate" style="width: 16px; height: 16px;">' : '✅'}
           </button>
         </td>
       </tr>
@@ -88,7 +88,7 @@ async function editFish(id) {
     document.getElementById('modalTitle').textContent = 'Edit Fish Category';
     document.getElementById('fishId').value = fish.id;
     document.getElementById('fishName').value = fish.name;
-    document.getElementById('fishPrice').value = fish.price_per_kg;
+    document.getElementById('fishPrice').value = fish.price_per_maund;
     document.getElementById('fishActive').checked = fish.active === 1;
     document.getElementById('statusGroup').style.display = 'block';
     
@@ -108,25 +108,31 @@ function closeFishModal() {
 
 // Save fish (add or update)
 async function saveFish() {
-  const name = document.getElementById('fishName').value.trim();
-  const price = parseFloat(document.getElementById('fishPrice').value);
-
-  if (!name) {
-    showAlert('Please enter fish name', 'warning');
-    return;
-  }
-
-  if (!price || price <= 0) {
-    showAlert('Please enter a valid price', 'warning');
-    return;
-  }
-
-  const fishData = { 
-    name, 
-    price_per_kg: price
-  };
-
+  const saveBtn = document.querySelector('.btn-primary');
+  setButtonLoading(saveBtn, true);
+  
   try {
+    const name = document.getElementById('fishName').value.trim();
+    const price = parseFloat(document.getElementById('fishPrice').value);
+
+    // Validate fish name (Issue 4)
+    const nameValidation = Validators.fishName(name);
+    if (!nameValidation.valid) {
+      showAlert(nameValidation.error, 'warning');
+      return;
+    }
+
+    // Validate price (Issue 4)
+    const priceValidation = Validators.price(price);
+    if (!priceValidation.valid) {
+      showAlert(priceValidation.error, 'warning');
+      return;
+    }
+
+    const fishData = { 
+      name: nameValidation.value, 
+      price_per_maund: roundMoney(priceValidation.value) // Issue 2
+    };
     if (currentEditingId) {
       // Update existing fish
       await window.electronAPI.updateFishCategory(currentEditingId, fishData);
@@ -149,12 +155,18 @@ async function saveFish() {
     closeFishModal();
     await loadFishCategories();
   } catch (error) {
-    console.error('Error saving fish category:', error);
-    if (error.message && error.message.includes('UNIQUE constraint')) {
-      showAlert('A fish category with this name already exists', 'error');
-    } else {
-      showAlert('Failed to save fish category', 'error');
+    // Better error messages (Issue 25)
+    let errorMessage = 'Failed to save fish category';
+    if (error && error.message) {
+      if (error.message.includes('UNIQUE constraint') || error.message.includes('already exists')) {
+        errorMessage = 'A fish category with this name already exists';
+      } else {
+        errorMessage = `Error: ${error.message}`;
+      }
     }
+    showAlert(errorMessage, 'error');
+  } finally {
+    setButtonLoading(saveBtn, false); // Issue 16
   }
 }
 

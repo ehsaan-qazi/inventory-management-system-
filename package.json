@@ -7,7 +7,7 @@
     "start": "electron .",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
-    "postinstall": "electron-rebuild"
+    "postinstall": "electron-rebuild || echo 'Warning: electron-rebuild failed, but continuing anyway'"
   },
   "keywords": [
     "electron",

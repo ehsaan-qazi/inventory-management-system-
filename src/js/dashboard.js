@@ -57,7 +57,8 @@ function setupMetricCardClicks() {
 // Load recent transactions
 async function loadRecentTransactions() {
   try {
-    const transactions = await window.electronAPI.getTransactions(10);
+    const result = await window.electronAPI.getTransactions({ limit: 10 });
+    const transactions = result.data || result; // Handle both paginated and non-paginated
     const tbody = document.getElementById('recentTransactions');
     
     if (transactions.length === 0) {
@@ -179,7 +180,7 @@ function displaySuggestions(results, query) {
       <div class="suggestion-item" onclick="selectCustomerFromSuggestion(${customer.id})">
         <div class="suggestion-name">${highlightText(customer.name, query)}</div>
         <div class="suggestion-details">
-          <span>📱 ${highlightText(customer.phone || 'No phone', query)}</span>
+          <span><img src="assets/mobile.png" alt="Phone" style="width: 14px; height: 14px; vertical-align: middle;"> ${highlightText(customer.phone || 'No phone', query)}</span>
           <span style="color: ${balanceColor};">${balanceText}</span>
         </div>
       </div>

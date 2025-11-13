@@ -1,24 +1,90 @@
-// Customers page functionality
-let allCustomers = [];
-let currentEditingId = null;
-let searchTimeout;
-let suggestionsDiv;
+// Customers page functionality (Issues 11,12,17 - Module pattern)
+(function() {
+  'use strict';
+  
+  let allCustomers = [];
+  let currentEditingId = null;
+  let searchTimeout;
+  let suggestionsDiv;
+  
+  // Pagination state
+  let currentPage = 1;
+  let pageSize = 50;
+  let totalPages = 1;
+  let totalCustomers = 0;
 
-document.addEventListener('DOMContentLoaded', async () => {
-  await loadCustomers();
-  checkURLParameters();
-  setupLiveSearch();
-});
+  document.addEventListener('DOMContentLoaded', async () => {
+    await loadCustomers();
+    checkURLParameters();
+    setupLiveSearch();
+  });
+  
+  // Clean up on page unload (Issue 11, 17)
+  window.addEventListener('beforeunload', () => {
+    if (searchTimeout) clearTimeout(searchTimeout);
+  });
 
-// Load all customers
+// Load all customers with pagination
 async function loadCustomers() {
   try {
-    allCustomers = await window.electronAPI.getCustomers();
+    const offset = (currentPage - 1) * pageSize;
+    const result = await window.electronAPI.getCustomers({
+      limit: pageSize,
+      offset: offset
+    });
+    
+    // Handle paginated response
+    if (result.data) {
+      allCustomers = result.data;
+      totalCustomers = result.total;
+      totalPages = Math.ceil(result.total / pageSize);
+    } else {
+      // Fallback for non-paginated response
+      allCustomers = result;
+      totalCustomers = result.length;
+      totalPages = 1;
+    }
+    
     displayCustomers(allCustomers);
+    updatePaginationUI();
   } catch (error) {
     console.error('Error loading customers:', error);
     showAlert('Failed to load customers', 'error');
   }
+}
+
+// Update pagination UI
+function updatePaginationUI() {
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const pageInfo = document.getElementById('pageInfo');
+  
+  if (prevBtn && nextBtn && pageInfo) {
+    prevBtn.disabled = currentPage === 1;
+    nextBtn.disabled = currentPage >= totalPages;
+    pageInfo.textContent = `Page ${currentPage} of ${totalPages} (${totalCustomers} customers)`;
+  }
+}
+
+// Pagination controls
+function nextPage() {
+  if (currentPage < totalPages) {
+    currentPage++;
+    loadCustomers();
+  }
+}
+
+function previousPage() {
+  if (currentPage > 1) {
+    currentPage--;
+    loadCustomers();
+  }
+}
+
+function changePageSize() {
+  pageSize = parseInt(document.getElementById('pageSize').value);
+  currentPage = 1; // Reset to first page
+  loadCustomers();
 }
 
 // Display customers in table
@@ -56,8 +122,8 @@ function displayCustomers(customers) {
         <td><span class="status-badge ${statusClass}">${statusText}</span></td>
         <td class="action-buttons">
           <button class="action-btn view" onclick="viewCustomer(${customer.id})" title="View Details">👁️</button>
-          <button class="action-btn edit" onclick="editCustomer(${customer.id})" title="Edit">✏️</button>
-          <button class="action-btn delete" onclick="deleteCustomer(${customer.id})" title="Delete">🗑️</button>
+          <button class="action-btn edit" onclick="editCustomer(${customer.id})" title="Edit"><img src="../assets/edit.png" alt="Edit" style="width: 16px; height: 16px;"></button>
+          <button class="action-btn delete" onclick="deleteCustomer(${customer.id})" title="Delete"><img src="../assets/delete.png" alt="Delete" style="width: 16px; height: 16px;"></button>
         </td>
       </tr>
     `;
@@ -150,7 +216,7 @@ function displaySuggestions(results, query) {
       <div class="suggestion-item" onclick="selectCustomerFromSuggestion(${customer.id})">
         <div class="suggestion-name">${highlightText(customer.name, query)}</div>
         <div class="suggestion-details">
-          <span>📱 ${highlightText(customer.phone || 'No phone', query)}</span>
+          <span><img src="../assets/mobile.png" alt="Phone" style="width: 14px; height: 14px; vertical-align: middle;"> ${highlightText(customer.phone || 'No phone', query)}</span>
           <span style="color: ${balanceColor};">${balanceText}</span>
         </div>
       </div>
@@ -243,27 +309,51 @@ function closeCustomerModal() {
 }
 
 // Save customer (add or update)
-async function saveCustomer() {
-  const name = document.getElementById('customerName').value.trim();
-  const phone = document.getElementById('customerPhone').value.trim();
-  const address = document.getElementById('customerAddress').value.trim();
-  const balance = parseFloat(document.getElementById('customerBalance').value) || 0;
-
-  if (!name) {
-    showAlert('Please enter customer name', 'warning');
-    return;
-  }
-
-  const customerData = { name, phone, address };
-
+async function saveCustomer(event) {
+  // Get button for loading state (Issue 16)
+  const saveBtn = event ? event.target : document.querySelector('.btn-primary');
+  setButtonLoading(saveBtn, true);
+  
   try {
+    const name = document.getElementById('customerName').value.trim();
+    const phone = document.getElementById('customerPhone').value.trim();
+    const address = document.getElementById('customerAddress').value.trim();
+    const balance = parseFloat(document.getElementById('customerBalance').value) || 0;
+
+    // Validate customer name (Issue 4, 22)
+    const nameValidation = Validators.customerName(name);
+    if (!nameValidation.valid) {
+      showAlert(nameValidation.error, 'warning');
+      return;
+    }
+
+    // Validate phone number (Issue 4, 22)
+    const phoneValidation = Validators.phoneNumber(phone);
+    if (!phoneValidation.valid) {
+      showAlert(phoneValidation.error, 'warning');
+      return;
+    }
+
+    // Validate address (Issue 4)
+    const addressValidation = Validators.address(address);
+    if (!addressValidation.valid) {
+      showAlert(addressValidation.error, 'warning');
+      return;
+    }
+
+    const customerData = { 
+      name: nameValidation.value, 
+      phone: phoneValidation.value, 
+      address: addressValidation.value 
+    };
+
     if (currentEditingId) {
       // Update existing customer
       await window.electronAPI.updateCustomer(currentEditingId, customerData);
       showAlert('Customer updated successfully', 'success');
     } else {
       // Add new customer
-      customerData.balance = balance;
+      customerData.balance = roundMoney(balance); // Issue 2
       await window.electronAPI.addCustomer(customerData);
       showAlert('Customer added successfully', 'success');
     }
@@ -271,10 +361,25 @@ async function saveCustomer() {
     closeCustomerModal();
     await loadCustomers();
   } catch (error) {
-    console.error('Error saving customer:', error);
-    showAlert('Failed to save customer', 'error');
+    // Better error messages (Issue 25, 28)
+    let errorMessage = 'Failed to save customer';
+    if (error.message) {
+      if (error.message.includes('already exists')) {
+        errorMessage = error.message; // Show duplicate error
+      } else if (error.message.includes('UNIQUE constraint')) {
+        errorMessage = 'A customer with this name or phone already exists';
+      } else {
+        errorMessage = `Error: ${error.message}`;
+      }
+    }
+    showAlert(errorMessage, 'error');
+  } finally {
+    setButtonLoading(saveBtn, false); // Issue 16
   }
 }
+
+// Make function available globally for onclick
+window.saveCustomer = saveCustomer;
 
 // Delete customer
 async function deleteCustomer(id) {
@@ -389,5 +494,20 @@ window.onclick = function(event) {
   if (event.target === viewModal) {
     closeViewCustomerModal();
   }
-}
+};
+
+// Expose functions needed by HTML onclick handlers
+window.openAddCustomerModal = openAddCustomerModal;
+window.editCustomer = editCustomer;
+window.deleteCustomer = deleteCustomer;
+window.viewCustomer = viewCustomer;
+window.closeCustomerModal = closeCustomerModal;
+window.closeViewCustomerModal = closeViewCustomerModal;
+window.searchCustomers = searchCustomers;
+window.selectCustomerFromSuggestion = selectCustomerFromSuggestion;
+window.nextPage = nextPage;
+window.previousPage = previousPage;
+window.changePageSize = changePageSize;
+
+})(); // End of IIFE (Issue 12)
 

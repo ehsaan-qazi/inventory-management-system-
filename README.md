@@ -22,6 +22,9 @@ A desktop application built with Electron for managing fish market inventory, cu
 ### Transaction/Billing
 ![Transactions](.github/images/transactions.png)
 
+### Fish Categories
+![Fish_Categories](.github/images/fishes.png)
+
 ### Reports
 ![Reports](.github/images/report.png)
 
@@ -99,5 +102,5 @@ The system now correctly tracks outstanding balances:
 
 ## License
 
-MIT
+APACHE 2.0
 

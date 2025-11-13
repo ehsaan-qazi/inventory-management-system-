@@ -5,6 +5,21 @@ const FishMarketDB = require('./src/js/database');
 let mainWindow;
 let db;
 
+// Single instance lock (Issue 13)
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // Someone tried to run a second instance, focus our window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -64,8 +79,8 @@ app.on('window-all-closed', () => {
 // IPC Handlers
 function setupIPCHandlers() {
   // Customer operations
-  ipcMain.handle('db:getCustomers', async () => {
-    return db.getAllCustomers();
+  ipcMain.handle('db:getCustomers', async (event, options) => {
+    return db.getAllCustomers(options || {});
   });
 
   ipcMain.handle('db:getCustomerById', async (event, id) => {
@@ -110,8 +125,8 @@ function setupIPCHandlers() {
   });
 
   // Transaction operations
-  ipcMain.handle('db:getTransactions', async (event, limit) => {
-    return db.getTransactions(limit);
+  ipcMain.handle('db:getTransactions', async (event, options) => {
+    return db.getTransactions(options || {});
   });
 
   ipcMain.handle('db:getTransactionById', async (event, id) => {
@@ -124,6 +139,10 @@ function setupIPCHandlers() {
 
   ipcMain.handle('db:addTransaction', async (event, transaction) => {
     return db.addTransaction(transaction);
+  });
+
+  ipcMain.handle('db:updateTransaction', async (event, id, updates) => {
+    return db.updateTransaction(id, updates);
   });
 
   // Report operations

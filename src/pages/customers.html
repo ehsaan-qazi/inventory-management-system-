@@ -15,23 +15,23 @@
             </div>
             <nav class="nav-menu">
                 <a href="../index.html" class="nav-item">
-                    <span class="icon">🏠</span>
+                    <span class="icon"><img src="../assets/dashboard.png" alt="Dashboard"></span>
                     <span>Dashboard</span>
                 </a>
                 <a href="customers.html" class="nav-item active">
-                    <span class="icon">👥</span>
+                    <span class="icon"><img src="../assets/customers.png" alt="Customers"></span>
                     <span>Customers</span>
                 </a>
                 <a href="transactions.html" class="nav-item">
-                    <span class="icon">💰</span>
+                    <span class="icon"><img src="../assets/Transactions.png" alt="Transactions"></span>
                     <span>Transactions</span>
                 </a>
                 <a href="fish-categories.html" class="nav-item">
-                    <span class="icon">🐟</span>
+                    <span class="icon"><img src="../assets/Fish_Categories.png" alt="Fish Categories"></span>
                     <span>Fish Categories</span>
                 </a>
                 <a href="reports.html" class="nav-item">
-                    <span class="icon">📊</span>
+                    <span class="icon"><img src="../assets/reports.png" alt="Reports"></span>
                     <span>Reports</span>
                 </a>
             </nav>
@@ -42,7 +42,7 @@
             <header class="header">
                 <div class="search-bar">
                     <input type="text" id="searchInput" placeholder="Search Customer Name, ID, or Phone Number">
-                    <button class="search-btn" onclick="searchCustomers()">🔍</button>
+                    <button class="search-btn" onclick="searchCustomers()"><img src="../assets/search-interface-symbol.png" alt="Search" style="width: 18px; height: 18px;"></button>
                 </div>
                 <div class="user-info">
                     <span class="user-name">Admin</span>
@@ -63,6 +63,23 @@
                             + Add Customer
                         </button>
                     </div>
+                    
+                    <!-- Pagination Controls -->
+                    <div class="pagination-controls" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <select id="pageSize" class="form-control" style="width: auto; display: inline-block;" onchange="changePageSize()">
+                                <option value="25">25 per page</option>
+                                <option value="50" selected>50 per page</option>
+                                <option value="100">100 per page</option>
+                            </select>
+                        </div>
+                        <div class="pagination-buttons">
+                            <button class="btn btn-outline btn-small" onclick="previousPage()" id="prevBtn" disabled>← Previous</button>
+                            <span id="pageInfo" style="margin: 0 15px; font-weight: 500;">Page 1 of 1</span>
+                            <button class="btn btn-outline btn-small" onclick="nextPage()" id="nextBtn" disabled>Next →</button>
+                        </div>
+                    </div>
+                    
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -167,6 +184,8 @@
         </div>
     </div>
 
+    <script src="../js/utils.js"></script>
+    <script src="../js/validation.js"></script>
     <script src="../js/customers.js"></script>
 </body>
 </html>

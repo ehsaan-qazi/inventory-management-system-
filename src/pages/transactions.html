@@ -15,23 +15,23 @@
             </div>
             <nav class="nav-menu">
                 <a href="../index.html" class="nav-item">
-                    <span class="icon">🏠</span>
+                    <span class="icon"><img src="../assets/dashboard.png" alt="Dashboard"></span>
                     <span>Dashboard</span>
                 </a>
                 <a href="customers.html" class="nav-item">
-                    <span class="icon">👥</span>
+                    <span class="icon"><img src="../assets/customers.png" alt="Customers"></span>
                     <span>Customers</span>
                 </a>
                 <a href="transactions.html" class="nav-item active">
-                    <span class="icon">💰</span>
+                    <span class="icon"><img src="../assets/Transactions.png" alt="Transactions"></span>
                     <span>Transactions</span>
                 </a>
                 <a href="fish-categories.html" class="nav-item">
-                    <span class="icon">🐟</span>
+                    <span class="icon"><img src="../assets/Fish_Categories.png" alt="Fish Categories"></span>
                     <span>Fish Categories</span>
                 </a>
                 <a href="reports.html" class="nav-item">
-                    <span class="icon">📊</span>
+                    <span class="icon"><img src="../assets/reports.png" alt="Reports"></span>
                     <span>Reports</span>
                 </a>
             </nav>
@@ -42,7 +42,7 @@
             <header class="header">
                 <div class="search-bar">
                     <input type="text" id="searchInput" placeholder="Search transactions...">
-                    <button class="search-btn">🔍</button>
+                    <button class="search-btn"><img src="../assets/search-interface-symbol.png" alt="Search" style="width: 18px; height: 18px;"></button>
                 </div>
                 <div class="user-info">
                     <span class="user-name">Admin</span>
@@ -91,8 +91,8 @@
                             <thead>
                                 <tr>
                                     <th>Fish Type</th>
-                                    <th>Weight (KG)</th>
-                                    <th>Price/KG</th>
+                                    <th>Weight</th>
+                                    <th>Price/Maund</th>
                                     <th>Subtotal</th>
                                     <th>Action</th>
                                 </tr>
@@ -113,16 +113,27 @@
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label for="weight">Weight (KG)</label>
-                                    <input type="number" id="weight" class="form-control" step="0.01" min="0.01" oninput="calculateItemSubtotal()">
+                                    <label for="weightMaund">Weight (Maund)</label>
+                                    <input type="number" id="weightMaund" class="form-control" step="1" min="0" value="0" oninput="calculateTotalWeightFromInputs()">
+                                    <small style="color: var(--text-secondary); font-size: 11px;">1 Maund = 40 KG</small>
                                 </div>
                                 <div class="form-group">
-                                    <label for="pricePerKg">Price per KG (Rs.)</label>
-                                    <input type="number" id="pricePerKg" class="form-control" step="0.01" readonly>
+                                    <label for="weightKg">Weight (KG)</label>
+                                    <input type="number" id="weightKg" class="form-control" step="0.01" min="0" value="0" oninput="calculateTotalWeightFromInputs()">
+                                </div>
+                                <div class="form-group">
+                                    <label for="totalWeight">Total Weight</label>
+                                    <input type="text" id="totalWeight" class="form-control" readonly value="0 Maund 0 KG" style="font-weight: 600;">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="pricePerMaund">Price per Maund (Rs.)</label>
+                                    <input type="number" id="pricePerMaund" class="form-control" step="0.01" readonly>
                                 </div>
                                 <div class="form-group">
                                     <label for="itemSubtotal">Subtotal (Rs.)</label>
-                                    <input type="text" id="itemSubtotal" class="form-control" readonly value="0.00">
+                                    <input type="text" id="itemSubtotal" class="form-control" readonly value="0.00" style="font-size: 16px; font-weight: 700;">
                                 </div>
                             </div>
                             <button class="btn btn-primary" onclick="addItem()">+ Add Item</button>
@@ -164,6 +175,46 @@
                         <h2>Recent Transactions</h2>
                         <button class="btn btn-outline btn-small" onclick="loadTransactions()">🔄 Refresh</button>
                     </div>
+                    
+                    <!-- Search Filters -->
+                    <div class="search-filters" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="filterCustomerName">Filter by Customer</label>
+                                <input type="text" id="filterCustomerName" class="form-control" placeholder="Enter customer name..." onkeyup="applyFilters()">
+                            </div>
+                            <div class="form-group">
+                                <label for="filterPaymentStatus">Filter by Status</label>
+                                <select id="filterPaymentStatus" class="form-control" onchange="applyFilters()">
+                                    <option value="">All Transactions</option>
+                                    <option value="paid">Paid</option>
+                                    <option value="unpaid_partial">Unpaid & Partial</option>
+                                    <option value="unpaid">Unpaid Only</option>
+                                    <option value="partial">Partial Only</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="display: flex; align-items: flex-end;">
+                                <button class="btn btn-outline" onclick="clearFilters()">Clear Filters</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Pagination Controls -->
+                    <div class="pagination-controls" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <select id="transPageSize" class="form-control" style="width: auto; display: inline-block;" onchange="changeTransPageSize()">
+                                <option value="25">25 per page</option>
+                                <option value="50" selected>50 per page</option>
+                                <option value="100">100 per page</option>
+                            </select>
+                        </div>
+                        <div class="pagination-buttons">
+                            <button class="btn btn-outline btn-small" onclick="previousTransPage()" id="prevTransBtn" disabled>← Previous</button>
+                            <span id="transPageInfo" style="margin: 0 15px; font-weight: 500;">Page 1 of 1</span>
+                            <button class="btn btn-outline btn-small" onclick="nextTransPage()" id="nextTransBtn" disabled>Next →</button>
+                        </div>
+                    </div>
+                    
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -173,7 +224,7 @@
                                 <th>Total</th>
                                 <th>Paid</th>
                                 <th>Status</th>
-                                <th>Actions</th>
+                                <th style="width: 120px;">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="transactionsTable">
@@ -185,6 +236,48 @@
                 </div>
             </section>
         </main>
+    </div>
+
+    <!-- Edit Transaction Modal -->
+    <div class="modal" id="editTransactionModal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3>Edit Transaction #<span id="editTxnId"></span></h3>
+                <button class="modal-close" onclick="closeEditTransactionModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div id="editAlertContainer"></div>
+                
+                <div class="form-group">
+                    <label>Customer</label>
+                    <input type="text" id="editCustomerName" class="form-control" readonly style="background: #f0f0f0;">
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editPaidAmount">Paid Amount (Rs.)</label>
+                        <input type="number" id="editPaidAmount" class="form-control" step="0.01" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Total Amount (Rs.)</label>
+                        <input type="text" id="editTotalAmount" class="form-control" readonly style="background: #f0f0f0;">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editNotes">Notes</label>
+                    <textarea id="editNotes" class="form-control"></textarea>
+                </div>
+                
+                <div style="padding: 10px; background: #fff3cd; border-radius: 6px; margin-top: 15px;">
+                    <strong>⚠️ Note:</strong> You can only edit the paid amount and notes. Items cannot be modified. To change items, create a new transaction.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeEditTransactionModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveEditedTransaction()">Save Changes</button>
+            </div>
+        </div>
     </div>
 
     <!-- View Bill Modal -->
@@ -206,7 +299,10 @@
         </div>
     </div>
 
+    <script src="../js/utils.js"></script>
+    <script src="../js/validation.js"></script>
     <script src="../js/transactions.js"></script>
 </body>
 </html>
+
 

@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
   // Customer operations
-  getCustomers: () => ipcRenderer.invoke('db:getCustomers'),
+  getCustomers: (options) => ipcRenderer.invoke('db:getCustomers', options),
   getCustomerById: (id) => ipcRenderer.invoke('db:getCustomerById', id),
   addCustomer: (customer) => ipcRenderer.invoke('db:addCustomer', customer),
   updateCustomer: (id, customer) => ipcRenderer.invoke('db:updateCustomer', id, customer),
@@ -18,10 +18,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleFishCategory: (id, active) => ipcRenderer.invoke('db:toggleFishCategory', id, active),
   
   // Transaction operations
-  getTransactions: (limit) => ipcRenderer.invoke('db:getTransactions', limit),
+  getTransactions: (options) => ipcRenderer.invoke('db:getTransactions', options),
   getTransactionById: (id) => ipcRenderer.invoke('db:getTransactionById', id),
   getTransactionsByCustomer: (customerId) => ipcRenderer.invoke('db:getTransactionsByCustomer', customerId),
   addTransaction: (transaction) => ipcRenderer.invoke('db:addTransaction', transaction),
+  updateTransaction: (id, updates) => ipcRenderer.invoke('db:updateTransaction', id, updates),
   
   // Report operations
   getDailySummary: (date) => ipcRenderer.invoke('db:getDailySummary', date),

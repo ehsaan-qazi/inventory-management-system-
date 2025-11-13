@@ -6,4 +6,5 @@ database/*.db-wal
 *.log
 .DS_Store
 Thumbs.db
-
+/UI-FEATURES-ADDED.md
+/SOLUTIONS-IMPLEMENTED.md
