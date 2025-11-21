@@ -74,6 +74,9 @@ A comprehensive desktop application built with Electron for managing fish market
 ### Customer Management
 ![Customer Management](.github/images/customers.png)
 
+### Farmer Management
+![Farmer Management](.github/images/Farmer.png)
+
 ### Transaction/Billing
 ![Transactions](.github/images/transactions.png)
 
