@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fish Market Inventory - Customers</title>
+    <title>Fish Market Inventory - Farmers</title>
     <link rel="stylesheet" href="../css/styles.css">
 </head>
 <body>
@@ -18,11 +18,11 @@
                     <span class="icon"><img src="../assets/dashboard.png" alt="Dashboard"></span>
                     <span>Dashboard</span>
                 </a>
-                <a href="customers.html" class="nav-item active">
+                <a href="customers.html" class="nav-item">
                     <span class="icon"><img src="../assets/customers.png" alt="Customers"></span>
                     <span>Customers</span>
                 </a>
-                <a href="farmers.html" class="nav-item">
+                <a href="farmers.html" class="nav-item active">
                     <span class="icon"><img src="../assets/supplier.png" alt="Farmers"></span>
                     <span>Farmers</span>
                 </a>
@@ -45,8 +45,8 @@
         <main class="main-content">
             <header class="header">
                 <div class="search-bar">
-                    <input type="text" id="searchInput" placeholder="Search Customer Name, ID, or Phone Number">
-                    <button class="search-btn" onclick="searchCustomers()"><img src="../assets/search-interface-symbol.png" alt="Search" style="width: 18px; height: 18px;"></button>
+                    <input type="text" id="searchInput" placeholder="Search Farmer Name, ID, or Phone Number">
+                    <button class="search-btn" onclick="searchFarmers()"><img src="../assets/search-interface-symbol.png" alt="Search" style="width: 18px; height: 18px;"></button>
                 </div>
                 <div class="user-info">
                     <span class="user-name">Admin</span>
@@ -54,17 +54,17 @@
             </header>
 
             <section class="content">
-                <h1>Customer Management</h1>
+                <h1>Farmer Management</h1>
 
                 <!-- Alert container -->
                 <div id="alertContainer"></div>
                 
-                <!-- Customers Table -->
+                <!-- Farmers Table -->
                 <div class="table-section">
                     <div class="section-header">
-                        <h2>All Customers</h2>
-                        <button class="btn-primary" onclick="openAddCustomerModal()">
-                            + Add Customer
+                        <h2>All Farmers</h2>
+                        <button class="btn-primary" onclick="openAddFarmerModal()">
+                            + Add Farmer
                         </button>
                     </div>
                     
@@ -96,9 +96,9 @@
                                 <th>Actions</th>
                             </tr>
                         </thead>
-                        <tbody id="customersTable">
+                        <tbody id="farmersTable">
                             <tr>
-                                <td colspan="7" class="no-data">Loading customers...</td>
+                                <td colspan="7" class="no-data">Loading farmers...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -107,62 +107,62 @@
         </main>
     </div>
 
-    <!-- Add/Edit Customer Modal -->
-    <div class="modal" id="customerModal">
+    <!-- Add/Edit Farmer Modal -->
+    <div class="modal" id="farmerModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="modalTitle">Add Customer</h3>
-                <button class="modal-close" onclick="closeCustomerModal()">×</button>
+                <h3 id="modalTitle">Add Farmer</h3>
+                <button class="modal-close" onclick="closeFarmerModal()">×</button>
             </div>
             <div class="modal-body">
-                <form id="customerForm">
-                    <input type="hidden" id="customerId">
+                <form id="farmerForm">
+                    <input type="hidden" id="farmerId">
                     
                     <div class="form-group">
-                        <label for="customerName">Customer Name *</label>
-                        <input type="text" id="customerName" class="form-control" required>
+                        <label for="farmerName">Farmer Name *</label>
+                        <input type="text" id="farmerName" class="form-control" required>
                     </div>
                     
                     <div class="form-group">
-                        <label for="customerPhone">Phone Number</label>
-                        <input type="tel" id="customerPhone" class="form-control">
+                        <label for="farmerPhone">Phone Number</label>
+                        <input type="tel" id="farmerPhone" class="form-control">
                     </div>
                     
                     <div class="form-group">
-                        <label for="customerAddress">Address</label>
-                        <textarea id="customerAddress" class="form-control"></textarea>
+                        <label for="farmerAddress">Address</label>
+                        <textarea id="farmerAddress" class="form-control"></textarea>
                     </div>
                     
                     <div class="form-group">
-                        <label for="customerBalance">Initial Balance (Optional)</label>
-                        <input type="number" id="customerBalance" class="form-control" step="0.01" value="0">
+                        <label for="farmerBalance">Initial Balance (Optional)</label>
+                        <input type="number" id="farmerBalance" class="form-control" step="0.01" value="0">
                         <small style="color: var(--text-secondary); font-size: 12px;">
-                            Positive = Prepaid, Negative = Outstanding, Zero = Balanced
+                            Negative = We owe farmer, Positive = Farmer credit, Zero = Balanced
                         </small>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeCustomerModal()">Cancel</button>
-                <button class="btn btn-primary" onclick="saveCustomer()">Save Customer</button>
+                <button class="btn btn-secondary" onclick="closeFarmerModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveFarmer()">Save Farmer</button>
             </div>
         </div>
     </div>
 
-    <!-- View Customer Details Modal -->
-    <div class="modal" id="viewCustomerModal">
+    <!-- View Farmer Details Modal -->
+    <div class="modal" id="viewFarmerModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Customer Details</h3>
-                <button class="modal-close" onclick="closeViewCustomerModal()">×</button>
+                <h3>Farmer Details</h3>
+                <button class="modal-close" onclick="closeViewFarmerModal()">×</button>
             </div>
             <div class="modal-body">
                 <div style="margin-bottom: 20px;">
-                    <h4 style="margin-bottom: 15px; color: var(--text-primary);" id="viewCustomerName"></h4>
-                    <p style="margin: 5px 0;"><strong>Phone:</strong> <span id="viewCustomerPhone"></span></p>
-                    <p style="margin: 5px 0;"><strong>Address:</strong> <span id="viewCustomerAddress"></span></p>
-                    <p style="margin: 5px 0;"><strong>Balance:</strong> <span id="viewCustomerBalance"></span></p>
-                    <p style="margin: 5px 0;"><strong>Joined:</strong> <span id="viewCustomerDate"></span></p>
+                    <h4 style="margin-bottom: 15px; color: var(--text-primary);" id="viewFarmerName"></h4>
+                    <p style="margin: 5px 0;"><strong>Phone:</strong> <span id="viewFarmerPhone"></span></p>
+                    <p style="margin: 5px 0;"><strong>Address:</strong> <span id="viewFarmerAddress"></span></p>
+                    <p style="margin: 5px 0;"><strong>Balance:</strong> <span id="viewFarmerBalance"></span></p>
+                    <p style="margin: 5px 0;"><strong>Joined:</strong> <span id="viewFarmerDate"></span></p>
                 </div>
 
                 <h4 style="margin-top: 30px; margin-bottom: 15px; color: var(--text-primary);">Transaction History</h4>
@@ -170,13 +170,13 @@
                     <thead>
                         <tr>
                             <th>Date</th>
-                            <th>Amount</th>
-                            <th>Paid</th>
-                            <th>Status</th>
+                            <th>Fish</th>
+                            <th>Total Amount</th>
+                            <th>Commission</th>
                             <th style="width: 100px;">Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="customerTransactions">
+                    <tbody id="farmerTransactions">
                         <tr>
                             <td colspan="5" class="no-data">No transactions yet</td>
                         </tr>
@@ -184,75 +184,75 @@
                 </table>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeViewCustomerModal()">Close</button>
+                <button class="btn btn-secondary" onclick="closeViewFarmerModal()">Close</button>
             </div>
         </div>
     </div>
 
     <!-- Edit Transaction Modal -->
-    <div class="modal" id="editTransactionModal">
+    <div class="modal" id="editFarmerTransactionModal">
         <div class="modal-content stacked">
             <div class="modal-header">
-                <h3>Edit Transaction #<span id="editTxnId"></span></h3>
-                <button class="modal-close" onclick="closeEditTransactionModal()">×</button>
+                <h3>Edit Transaction #<span id="editFarmerTxnId"></span></h3>
+                <button class="modal-close" onclick="closeEditFarmerTransactionModal()">×</button>
             </div>
             <div class="modal-body">
-                <div id="editAlertContainer"></div>
+                <div id="editFarmerAlertContainer"></div>
                 
                 <div class="form-group">
-                    <label>Customer</label>
-                    <input type="text" id="editCustomerName" class="form-control" readonly style="background: #f0f0f0;">
+                    <label>Farmer</label>
+                    <input type="text" id="editFarmerTxnName" class="form-control" readonly style="background: #f0f0f0;">
                 </div>
                 
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="editPaidAmount">Paid Amount (Rs.)</label>
-                        <input type="number" id="editPaidAmount" class="form-control" step="0.01" min="0">
+                        <label for="editFarmerPaidAmount">Paid Amount (Rs.)</label>
+                        <input type="number" id="editFarmerPaidAmount" class="form-control" step="0.01" min="0">
                     </div>
                     <div class="form-group">
-                        <label>Total Amount (Rs.)</label>
-                        <input type="text" id="editTotalAmount" class="form-control" readonly style="background: #f0f0f0;">
+                        <label>Net Amount (Rs.)</label>
+                        <input type="text" id="editFarmerNetAmount" class="form-control" readonly style="background: #f0f0f0;">
                     </div>
                 </div>
                 
                 <div class="form-group">
-                    <label for="editNotes">Notes</label>
-                    <textarea id="editNotes" class="form-control"></textarea>
+                    <label for="editFarmerNotes">Notes</label>
+                    <textarea id="editFarmerNotes" class="form-control"></textarea>
                 </div>
                 
                 <div style="padding: 10px; background: #fff3cd; border-radius: 6px; margin-top: 15px;">
-                    <strong>⚠️ Note:</strong> You can only edit the paid amount and notes. Items cannot be modified.
+                    <strong>⚠️ Note:</strong> You can only edit the paid amount and notes. Transaction details cannot be modified.
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeEditTransactionModal()">Cancel</button>
-                <button class="btn btn-primary" onclick="saveEditedTransaction()">Save Changes</button>
+                <button class="btn btn-secondary" onclick="closeEditFarmerTransactionModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveEditedFarmerTransaction()">Save Changes</button>
             </div>
         </div>
     </div>
 
     <!-- View Receipt Modal (Stacked) -->
-    <div class="modal" id="viewReceiptModal">
+    <div class="modal" id="viewFarmerReceiptModal">
         <div class="modal-content stacked">
             <div class="modal-header">
                 <h3>Transaction Receipt</h3>
-                <button class="modal-close" onclick="closeViewReceiptModal()">×</button>
+                <button class="modal-close" onclick="closeViewFarmerReceiptModal()">×</button>
             </div>
             <div class="modal-body">
-                <div id="receiptContent">
+                <div id="farmerReceiptContent">
                     <!-- Receipt content will be loaded here -->
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeViewReceiptModal()">Close</button>
-                <button class="btn btn-primary" onclick="printReceipt()">🖨️ Print</button>
+                <button class="btn btn-secondary" onclick="closeViewFarmerReceiptModal()">Close</button>
+                <button class="btn btn-primary" onclick="printFarmerReceipt()">🖨️ Print</button>
             </div>
         </div>
     </div>
 
     <script src="../js/utils.js"></script>
     <script src="../js/validation.js"></script>
-    <script src="../js/customers.js"></script>
+    <script src="../js/farmers.js"></script>
 </body>
 </html>
 

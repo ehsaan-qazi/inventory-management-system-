@@ -314,6 +314,16 @@ body {
   background-color: #f8f9fa;
 }
 
+/* Clickable transaction rows */
+.data-table tbody tr.transaction-row-clickable {
+  cursor: pointer;
+}
+
+.data-table tbody tr.transaction-row-clickable:hover {
+  background-color: #e3f2fd;
+  transition: background-color 0.2s ease;
+}
+
 .data-table td {
   padding: 15px;
   color: var(--text-primary);
@@ -528,6 +538,14 @@ body {
   box-shadow: 0 0 0 3px rgba(38, 166, 154, 0.1);
 }
 
+/* Ensure inputs always accept pointer events (fix for input freeze issue) */
+input:not([disabled]),
+textarea:not([disabled]),
+select:not([disabled]) {
+  pointer-events: auto !important;
+  user-select: text !important;
+}
+
 .form-control:disabled {
   background-color: #f5f7fa;
   cursor: not-allowed;
@@ -566,6 +584,12 @@ textarea.form-control {
   display: flex;
 }
 
+/* Stacked modals - appear on top of other modals */
+.modal.active:has(.modal-content.stacked) {
+  z-index: 1001;
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
 .modal-content {
   background-color: var(--background);
   border-radius: 12px;
@@ -574,6 +598,11 @@ textarea.form-control {
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.modal-content.stacked {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  border: 2px solid var(--primary-color);
 }
 
 .modal-header {
@@ -866,3 +895,33 @@ textarea.form-control {
   }
 }
 
+/* Transaction Type Tabs */
+.transaction-type-tabs {
+  display: flex;
+  gap: 10px;
+  border-bottom: 2px solid #e0e0e0;
+  margin-bottom: 20px;
+}
+
+.tab-button {
+  padding: 12px 30px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 3px solid transparent;
+  transition: all 0.3s;
+  position: relative;
+  bottom: -2px;
+}
+
+.tab-button:hover {
+  color: var(--primary-color);
+}
+
+.tab-button.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}

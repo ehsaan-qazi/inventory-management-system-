@@ -45,6 +45,35 @@ function createWindow() {
   // Open DevTools in development
   // mainWindow.webContents.openDevTools();
 
+  // Handle focus events to ensure input fields work properly (Issue: input fields stop working)
+  mainWindow.on('focus', () => {
+    // Force the renderer to restore focus state
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('window-focus-restored');
+      // Ensure webContents is focused
+      if (!mainWindow.webContents.isFocused()) {
+        mainWindow.webContents.focus();
+      }
+    }
+  });
+
+  mainWindow.on('blur', () => {
+    // Track when window loses focus
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('window-focus-lost');
+    }
+  });
+
+  // Additional handler for when app becomes active
+  app.on('browser-window-focus', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('window-focus-restored');
+      if (!mainWindow.webContents.isFocused()) {
+        mainWindow.webContents.focus();
+      }
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -103,6 +132,31 @@ function setupIPCHandlers() {
     return db.searchCustomers(query);
   });
 
+  // Farmer operations
+  ipcMain.handle('db:getFarmers', async (event, options) => {
+    return db.getAllFarmers(options || {});
+  });
+
+  ipcMain.handle('db:getFarmerById', async (event, id) => {
+    return db.getFarmerById(id);
+  });
+
+  ipcMain.handle('db:addFarmer', async (event, farmer) => {
+    return db.addFarmer(farmer);
+  });
+
+  ipcMain.handle('db:updateFarmer', async (event, id, farmer) => {
+    return db.updateFarmer(id, farmer);
+  });
+
+  ipcMain.handle('db:deleteFarmer', async (event, id) => {
+    return db.deleteFarmer(id);
+  });
+
+  ipcMain.handle('db:searchFarmers', async (event, query) => {
+    return db.searchFarmers(query);
+  });
+
   // Fish category operations
   ipcMain.handle('db:getFishCategories', async () => {
     return db.getAllFishCategories();
@@ -143,6 +197,23 @@ function setupIPCHandlers() {
 
   ipcMain.handle('db:updateTransaction', async (event, id, updates) => {
     return db.updateTransaction(id, updates);
+  });
+
+  // Farmer transaction operations
+  ipcMain.handle('db:addFarmerTransaction', async (event, transaction) => {
+    return db.addFarmerTransaction(transaction);
+  });
+
+  ipcMain.handle('db:getFarmerTransactions', async (event, options) => {
+    return db.getFarmerTransactions(options || {});
+  });
+
+  ipcMain.handle('db:getFarmerTransactionById', async (event, id) => {
+    return db.getFarmerTransactionById(id);
+  });
+
+  ipcMain.handle('db:getTransactionsByFarmer', async (event, farmerId) => {
+    return db.getTransactionsByFarmer(farmerId);
   });
 
   // Report operations

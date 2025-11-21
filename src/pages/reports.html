@@ -22,6 +22,10 @@
                     <span class="icon"><img src="../assets/customers.png" alt="Customers"></span>
                     <span>Customers</span>
                 </a>
+                <a href="farmers.html" class="nav-item">
+                    <span class="icon"><img src="../assets/supplier.png" alt="Farmers"></span>
+                    <span>Farmers</span>
+                </a>
                 <a href="transactions.html" class="nav-item">
                     <span class="icon"><img src="../assets/Transactions.png" alt="Transactions"></span>
                     <span>Transactions</span>
@@ -50,11 +54,25 @@
             </header>
 
             <section class="content">
-                <h1>Sales Reports</h1>
+                <h1>Reports</h1>
 
                 <!-- Alert container -->
                 <div id="alertContainer"></div>
 
+                <!-- Report Type Tabs -->
+                <div style="margin-bottom: 20px;">
+                    <div class="transaction-type-tabs" style="display: flex; gap: 10px; border-bottom: 2px solid #e0e0e0;">
+                        <button id="customerReportTab" class="tab-button active" onclick="switchReportType('customer')" style="padding: 12px 30px; border: none; background: none; cursor: pointer; font-size: 16px; font-weight: 600; color: var(--primary-color); border-bottom: 3px solid var(--primary-color); transition: all 0.3s;">
+                            Customer Reports
+                        </button>
+                        <button id="farmerReportTab" class="tab-button" onclick="switchReportType('farmer')" style="padding: 12px 30px; border: none; background: none; cursor: pointer; font-size: 16px; font-weight: 600; color: var(--text-secondary); border-bottom: 3px solid transparent; transition: all 0.3s;">
+                            Farmer Reports
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Customer Reports Section -->
+                <div id="customerReportsSection">
                 <!-- Date Filter -->
                 <div class="table-section">
                     <div class="section-header">
@@ -167,6 +185,125 @@
                         </tbody>
                     </table>
                 </div>
+                </div>
+                <!-- End Customer Reports Section -->
+
+                <!-- Farmer Reports Section -->
+                <div id="farmerReportsSection" style="display: none;">
+                <!-- Date Filter -->
+                <div class="table-section">
+                    <div class="section-header">
+                        <h2>Filter Reports</h2>
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="farmerStartDate">Start Date</label>
+                                <input type="date" id="farmerStartDate" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label for="farmerEndDate">End Date</label>
+                                <input type="date" id="farmerEndDate" class="form-control">
+                            </div>
+                        </div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px;">
+                            <button class="btn btn-primary" onclick="loadFarmerReportByDateRange()">Generate Report</button>
+                            <button class="btn btn-outline" onclick="loadFarmerToday()">Today</button>
+                            <button class="btn btn-outline" onclick="loadFarmerThisWeek()">This Week</button>
+                            <button class="btn btn-outline" onclick="loadFarmerThisMonth()">This Month</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Summary Cards -->
+                <div class="metrics-grid" style="margin-bottom: 30px;">
+                    <div class="metric-card blue">
+                        <div class="metric-label">Total Purchases</div>
+                        <div class="metric-value" id="farmerTotalPurchases">Rs.0</div>
+                    </div>
+                    <div class="metric-card green">
+                        <div class="metric-label">Cash Paid</div>
+                        <div class="metric-value" id="farmerCashPaid">Rs.0</div>
+                    </div>
+                    <div class="metric-card yellow">
+                        <div class="metric-label">We Owe</div>
+                        <div class="metric-value" id="farmerWeOwe">Rs.0</div>
+                    </div>
+                    <div class="metric-card purple">
+                        <div class="metric-label">Transactions</div>
+                        <div class="metric-value" id="farmerTransactionCount">0</div>
+                    </div>
+                </div>
+
+                <!-- Daily Summary Report -->
+                <div class="table-section">
+                    <div class="section-header">
+                        <h2>Daily Summary</h2>
+                        <button class="btn btn-outline btn-small" onclick="exportFarmerToCSV()">📥 Export CSV</button>
+                    </div>
+                    <table class="data-table" id="farmerReportTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Total Purchases</th>
+                                <th>Cash Paid</th>
+                                <th>Balance Change</th>
+                                <th>Transactions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="farmerReportBody">
+                            <tr>
+                                <td colspan="5" class="no-data">Select date range to generate report</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Farmers We Owe -->
+                <div class="table-section">
+                    <div class="section-header">
+                        <h2>Farmers We Owe Money</h2>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Farmer Name</th>
+                                <th>Phone</th>
+                                <th>Amount We Owe</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="farmersWeOwe">
+                            <tr>
+                                <td colspan="4" class="no-data">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Farmers with Credit -->
+                <div class="table-section">
+                    <div class="section-header">
+                        <h2>Farmers with Credit Balance</h2>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Farmer Name</th>
+                                <th>Phone</th>
+                                <th>Credit Amount</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="farmerCredit">
+                            <tr>
+                                <td colspan="4" class="no-data">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                </div>
+                <!-- End Farmer Reports Section -->
             </section>
         </main>
     </div>

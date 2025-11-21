@@ -122,12 +122,12 @@ function setupSearch() {
     }
   });
 
-  // Hide suggestions when clicking outside
+  // Hide suggestions when clicking outside (use capture phase to avoid conflicts)
   document.addEventListener('click', (e) => {
-    if (!searchBar.contains(e.target)) {
+    if (!searchBar.contains(e.target) && !suggestionsDiv.contains(e.target)) {
       suggestionsDiv.style.display = 'none';
     }
-  });
+  }, true); // Use capture phase
 }
 
 // Perform live search and show suggestions

@@ -129,6 +129,60 @@ class FishMarketDB {
       )
     `);
 
+    // Create farmers table (similar to customers)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS farmers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT,
+        address TEXT,
+        balance REAL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create farmer_transactions table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS farmer_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        farmer_id INTEGER NOT NULL,
+        transaction_date DATE NOT NULL,
+        transaction_time TIME NOT NULL,
+        fish_category_id INTEGER NOT NULL,
+        fish_name TEXT NOT NULL,
+        weight_maund INTEGER DEFAULT 0,
+        weight_kg REAL DEFAULT 0,
+        total_weight_kg REAL NOT NULL,
+        price_per_maund REAL NOT NULL,
+        customer_markup_percentage REAL NOT NULL,
+        final_price_per_maund REAL NOT NULL,
+        total_fish_value REAL NOT NULL,
+        commission_percentage REAL NOT NULL,
+        commission_amount REAL NOT NULL,
+        munshi_nama REAL DEFAULT 0,
+        baraf_price REAL DEFAULT 0,
+        labour_charges REAL DEFAULT 0,
+        extra_charges REAL DEFAULT 0,
+        total_amount REAL NOT NULL,
+        paid_amount REAL DEFAULT 0,
+        balance_change REAL NOT NULL,
+        balance_after REAL NOT NULL,
+        notes TEXT,
+        status TEXT DEFAULT 'completed',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (farmer_id) REFERENCES farmers(id) ON DELETE CASCADE,
+        FOREIGN KEY (fish_category_id) REFERENCES fish_categories(id)
+      )
+    `);
+    
+    // Add paid_amount column if it doesn't exist
+    try {
+      this.db.exec(`ALTER TABLE farmer_transactions ADD COLUMN paid_amount REAL DEFAULT 0`);
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
     // Create indexes for better performance
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_transactions_customer 
@@ -148,6 +202,31 @@ class FishMarketDB {
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_customers_name 
       ON customers(name);
+    `);
+
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_farmers_name 
+      ON farmers(name);
+    `);
+
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_farmer_transactions_farmer 
+      ON farmer_transactions(farmer_id);
+    `);
+
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_farmer_transactions_date 
+      ON farmer_transactions(transaction_date);
+    `);
+
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_farmer_transactions_farmer 
+      ON farmer_transactions(farmer_id);
+    `);
+
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_farmer_transactions_date 
+      ON farmer_transactions(transaction_date);
     `);
 
     console.log('Database tables initialized successfully');
@@ -333,6 +412,138 @@ class FishMarketDB {
     });
     
     return customers;
+  }
+
+  // Farmer operations (similar to customers)
+  getAllFarmers(options = {}) {
+    const { limit, offset, sortBy = 'name', sortOrder = 'ASC' } = options;
+    
+    let query = 'SELECT * FROM farmers ORDER BY ' + sortBy + ' ' + sortOrder;
+    let params = [];
+    
+    if (limit) {
+      query += ' LIMIT ? OFFSET ?';
+      params = [limit, offset || 0];
+    }
+    
+    const stmt = this.db.prepare(query);
+    const farmers = params.length > 0 ? stmt.all(...params) : stmt.all();
+    
+    // Calculate balance dynamically for each farmer
+    farmers.forEach(farmer => {
+      farmer.balance = this.getFarmerBalance(farmer.id);
+    });
+    
+    if (limit) {
+      const countStmt = this.db.prepare('SELECT COUNT(*) as count FROM farmers');
+      const total = countStmt.get().count;
+      
+      return {
+        data: farmers,
+        total,
+        limit,
+        offset: offset || 0,
+        hasMore: (offset || 0) + limit < total
+      };
+    }
+    
+    return farmers;
+  }
+
+  getFarmerById(id) {
+    const stmt = this.db.prepare('SELECT * FROM farmers WHERE id = ?');
+    const farmer = stmt.get(id);
+    
+    if (farmer) {
+      farmer.balance = this.getFarmerBalance(farmer.id);
+    }
+    
+    return farmer;
+  }
+
+  getFarmerBalance(farmerId) {
+    const stmt = this.db.prepare(`
+      SELECT COALESCE(SUM(balance_change), 0) as balance
+      FROM farmer_transactions
+      WHERE farmer_id = ? AND status != 'voided'
+    `);
+    const result = stmt.get(farmerId);
+    return result ? result.balance : 0;
+  }
+
+  addFarmer(farmer) {
+    // Check for duplicates
+    const duplicateStmt = this.db.prepare(`
+      SELECT id, name FROM farmers 
+      WHERE LOWER(name) = LOWER(?) OR (phone IS NOT NULL AND phone = ?)
+    `);
+    const duplicate = duplicateStmt.get(farmer.name, farmer.phone || null);
+    
+    if (duplicate) {
+      throw new Error(`Farmer "${duplicate.name}" already exists`);
+    }
+    
+    const stmt = this.db.prepare(`
+      INSERT INTO farmers (name, phone, address, balance)
+      VALUES (@name, @phone, @address, @balance)
+    `);
+    const info = stmt.run({
+      name: farmer.name,
+      phone: farmer.phone || null,
+      address: farmer.address || null,
+      balance: farmer.balance || 0
+    });
+    return info.lastInsertRowid;
+  }
+
+  updateFarmer(id, farmer) {
+    const stmt = this.db.prepare(`
+      UPDATE farmers 
+      SET name = @name, phone = @phone, address = @address, updated_at = CURRENT_TIMESTAMP
+      WHERE id = @id
+    `);
+    return stmt.run({
+      id,
+      name: farmer.name,
+      phone: farmer.phone,
+      address: farmer.address
+    });
+  }
+
+  updateFarmerBalance(id, balance) {
+    const stmt = this.db.prepare(`
+      UPDATE farmers 
+      SET balance = @balance, updated_at = CURRENT_TIMESTAMP
+      WHERE id = @id
+    `);
+    return stmt.run({ id, balance });
+  }
+
+  deleteFarmer(id) {
+    const stmt = this.db.prepare('DELETE FROM farmers WHERE id = ?');
+    return stmt.run(id);
+  }
+
+  searchFarmers(query) {
+    if (typeof query !== 'string') {
+      return [];
+    }
+    
+    const stmt = this.db.prepare(`
+      SELECT * FROM farmers 
+      WHERE name LIKE ? OR phone LIKE ? OR id = ?
+      ORDER BY name
+      LIMIT 100
+    `);
+    const searchTerm = `%${query}%`;
+    const idSearch = isNaN(query) ? -1 : parseInt(query);
+    const farmers = stmt.all(searchTerm, searchTerm, idSearch);
+    
+    farmers.forEach(farmer => {
+      farmer.balance = this.getFarmerBalance(farmer.id);
+    });
+    
+    return farmers;
   }
 
   // Fish category operations
@@ -632,6 +843,150 @@ class FishMarketDB {
     });
     
     return txn();
+  }
+
+  // Farmer transaction operations
+  addFarmerTransaction(transaction) {
+    const addTxn = this.db.transaction((txn) => {
+      // Insert farmer transaction
+      const stmt = this.db.prepare(`
+        INSERT INTO farmer_transactions (
+          farmer_id, transaction_date, transaction_time,
+          fish_category_id, fish_name,
+          weight_maund, weight_kg, total_weight_kg,
+          price_per_maund, customer_markup_percentage, final_price_per_maund,
+          total_fish_value, commission_percentage, commission_amount,
+          munshi_nama, baraf_price, labour_charges, extra_charges,
+          total_amount, paid_amount, balance_change, balance_after, notes, status
+        )
+        VALUES (
+          @farmer_id, @transaction_date, @transaction_time,
+          @fish_category_id, @fish_name,
+          @weight_maund, @weight_kg, @total_weight_kg,
+          @price_per_maund, @customer_markup_percentage, @final_price_per_maund,
+          @total_fish_value, @commission_percentage, @commission_amount,
+          @munshi_nama, @baraf_price, @labour_charges, @extra_charges,
+          @total_amount, @paid_amount, @balance_change, @balance_after, @notes, @status
+        )
+      `);
+      
+      const info = stmt.run({
+        farmer_id: txn.farmer_id,
+        transaction_date: txn.transaction_date,
+        transaction_time: txn.transaction_time,
+        fish_category_id: txn.fish_category_id,
+        fish_name: txn.fish_name,
+        weight_maund: txn.weight_maund,
+        weight_kg: txn.weight_kg,
+        total_weight_kg: txn.total_weight_kg,
+        price_per_maund: txn.price_per_maund,
+        customer_markup_percentage: txn.customer_markup_percentage,
+        final_price_per_maund: txn.final_price_per_maund,
+        total_fish_value: txn.total_fish_value,
+        commission_percentage: txn.commission_percentage,
+        commission_amount: txn.commission_amount,
+        munshi_nama: txn.munshi_nama || 0,
+        baraf_price: txn.baraf_price || 0,
+        labour_charges: txn.labour_charges || 0,
+        extra_charges: txn.extra_charges || 0,
+        total_amount: txn.total_amount,
+        paid_amount: txn.paid_amount || 0,
+        balance_change: txn.balance_change,
+        balance_after: txn.balance_after,
+        notes: txn.notes || null,
+        status: txn.status || 'completed'
+      });
+      
+      const transactionId = info.lastInsertRowid;
+
+      // Update farmer balance
+      this.updateFarmerBalance(txn.farmer_id, txn.balance_after);
+
+      // Update fish category price with markup
+      this.updateFishCategory(txn.fish_category_id, {
+        name: txn.fish_name,
+        price_per_maund: txn.final_price_per_maund
+      });
+
+      return transactionId;
+    });
+
+    return addTxn(transaction);
+  }
+
+  getFarmerTransactions(options = {}) {
+    const { 
+      limit = 50, 
+      offset = 0,
+      farmerName = null
+    } = options;
+    
+    let query = `
+      SELECT ft.*, f.name as farmer_name 
+      FROM farmer_transactions ft
+      JOIN farmers f ON ft.farmer_id = f.id
+      WHERE 1=1
+    `;
+    const params = [];
+    
+    if (farmerName) {
+      query += ' AND f.name LIKE ?';
+      params.push(`%${farmerName}%`);
+    }
+    
+    query += ` AND (ft.status IS NULL OR ft.status = 'completed')`;
+    query += ' ORDER BY ft.transaction_date DESC, ft.transaction_time DESC';
+    query += ' LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+    
+    const stmt = this.db.prepare(query);
+    const transactions = stmt.all(...params);
+    
+    // Get total count
+    let countQuery = `
+      SELECT COUNT(*) as count
+      FROM farmer_transactions ft
+      JOIN farmers f ON ft.farmer_id = f.id
+      WHERE 1=1
+    `;
+    const countParams = [];
+    
+    if (farmerName) {
+      countQuery += ' AND f.name LIKE ?';
+      countParams.push(`%${farmerName}%`);
+    }
+    
+    countQuery += ` AND (ft.status IS NULL OR ft.status = 'completed')`;
+    
+    const countStmt = this.db.prepare(countQuery);
+    const total = countStmt.get(...countParams).count;
+    
+    return {
+      data: transactions,
+      total,
+      limit,
+      offset,
+      hasMore: offset + limit < total
+    };
+  }
+
+  getFarmerTransactionById(id) {
+    const stmt = this.db.prepare(`
+      SELECT ft.*, f.name as farmer_name, f.phone as farmer_phone
+      FROM farmer_transactions ft
+      JOIN farmers f ON ft.farmer_id = f.id
+      WHERE ft.id = ?
+    `);
+    return stmt.get(id);
+  }
+
+  getTransactionsByFarmer(farmerId) {
+    const stmt = this.db.prepare(`
+      SELECT * FROM farmer_transactions 
+      WHERE farmer_id = ? AND (status IS NULL OR status = 'completed')
+      ORDER BY transaction_date DESC, transaction_time DESC
+    `);
+    return stmt.all(farmerId);
   }
 
   // Daily summary operations

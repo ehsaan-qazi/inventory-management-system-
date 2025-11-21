@@ -157,12 +157,12 @@ function setupLiveSearch() {
     }, 300);
   });
   
-  // Hide suggestions when clicking outside
+  // Hide suggestions when clicking outside (use capture phase to avoid conflicts)
   document.addEventListener('click', (e) => {
-    if (!searchBar.contains(e.target)) {
+    if (!searchBar.contains(e.target) && !suggestionsDiv.contains(e.target)) {
       suggestionsDiv.style.display = 'none';
     }
-  });
+  }, true); // Use capture phase
 }
 
 // Perform live search and show suggestions
@@ -442,16 +442,21 @@ async function viewCustomer(id) {
     const transactionsBody = document.getElementById('customerTransactions');
     
     if (transactions.length === 0) {
-      transactionsBody.innerHTML = '<tr><td colspan="4" class="no-data">No transactions yet</td></tr>';
+      transactionsBody.innerHTML = '<tr><td colspan="5" class="no-data">No transactions yet</td></tr>';
     } else {
       transactionsBody.innerHTML = transactions.map(txn => {
         const date = new Date(txn.transaction_date);
         return `
-          <tr>
+          <tr class="transaction-row-clickable" onclick="viewTransactionReceipt(${txn.id})">
             <td>${date.toLocaleDateString('en-IN')}</td>
             <td>Rs.${txn.total_amount.toFixed(2)}</td>
             <td>Rs.${txn.paid_amount.toFixed(2)}</td>
             <td><span class="status-badge ${txn.payment_status}">${txn.payment_status}</span></td>
+            <td class="action-buttons">
+              <button class="action-btn edit" onclick="event.stopPropagation(); editTransactionFromCustomer(${txn.id})" title="Edit">
+                <img src="../assets/edit.png" alt="Edit" style="width: 16px; height: 16px;">
+              </button>
+            </td>
           </tr>
         `;
       }).join('');
@@ -487,7 +492,17 @@ function showAlert(message, type = 'info') {
 window.onclick = function(event) {
   const customerModal = document.getElementById('customerModal');
   const viewModal = document.getElementById('viewCustomerModal');
+  const editModal = document.getElementById('editTransactionModal');
+  const receiptModal = document.getElementById('viewReceiptModal');
   
+  // Close stacked modals first (higher z-index)
+  if (event.target === editModal) {
+    closeEditTransactionModal();
+  }
+  if (event.target === receiptModal) {
+    closeViewReceiptModal();
+  }
+  // Then base modals
   if (event.target === customerModal) {
     closeCustomerModal();
   }
@@ -495,6 +510,173 @@ window.onclick = function(event) {
     closeViewCustomerModal();
   }
 };
+
+// Edit transaction from customer modal
+let editingTransactionId = null;
+let editingCustomerId = null;
+
+async function editTransactionFromCustomer(txnId) {
+  try {
+    const txn = await window.electronAPI.getTransactionById(txnId);
+    if (!txn) {
+      showAlert('Transaction not found', 'error');
+      return;
+    }
+    
+    editingTransactionId = txnId;
+    editingCustomerId = txn.customer_id;
+    
+    // Populate modal
+    document.getElementById('editTxnId').textContent = txn.id;
+    document.getElementById('editCustomerName').value = txn.customer_name;
+    document.getElementById('editTotalAmount').value = formatMoney(txn.total_amount);
+    document.getElementById('editPaidAmount').value = txn.paid_amount.toFixed(2);
+    document.getElementById('editNotes').value = txn.notes || '';
+    
+    // Show modal
+    document.getElementById('editTransactionModal').classList.add('active');
+  } catch (error) {
+    console.error('Error loading transaction:', error);
+    showAlert('Failed to load transaction details', 'error');
+  }
+}
+
+function closeEditTransactionModal() {
+  document.getElementById('editTransactionModal').classList.remove('active');
+  editingTransactionId = null;
+  editingCustomerId = null;
+}
+
+async function saveEditedTransaction() {
+  if (!editingTransactionId) return;
+  
+  try {
+    const paidAmount = parseFloat(document.getElementById('editPaidAmount').value) || 0;
+    const notes = document.getElementById('editNotes').value.trim();
+    
+    await window.electronAPI.updateTransaction(editingTransactionId, {
+      paid_amount: paidAmount,
+      notes: notes
+    });
+    
+    showAlert('Transaction updated successfully', 'success');
+    closeEditTransactionModal();
+    
+    // Refresh customer view
+    if (editingCustomerId) {
+      await viewCustomer(editingCustomerId);
+    }
+  } catch (error) {
+    console.error('Error updating transaction:', error);
+    showAlert('Failed to update transaction', 'error');
+  }
+}
+
+// View transaction receipt
+async function viewTransactionReceipt(txnId) {
+  try {
+    const txn = await window.electronAPI.getTransactionById(txnId);
+    if (!txn) {
+      showAlert('Transaction not found', 'error');
+      return;
+    }
+    
+    const date = new Date(txn.transaction_date);
+    const receiptContent = document.getElementById('receiptContent');
+    
+    receiptContent.innerHTML = `
+      <div style="font-family: monospace; padding: 20px; background: white;">
+        <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px;">
+          <h2 style="margin: 0;">FishMarket</h2>
+          <p style="margin: 5px 0;">Fish Market Inventory System</p>
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+          <p><strong>Bill #:</strong> ${txn.id}</p>
+          <p><strong>Date:</strong> ${date.toLocaleDateString('en-IN')} ${txn.transaction_time}</p>
+          <p><strong>Customer:</strong> ${txn.customer_name}</p>
+          <p><strong>Phone:</strong> ${txn.customer_phone || 'N/A'}</p>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+          <thead>
+            <tr style="border-bottom: 2px solid #000;">
+              <th style="text-align: left; padding: 8px;">Item</th>
+              <th style="text-align: right; padding: 8px;">Weight</th>
+              <th style="text-align: right; padding: 8px;">Price/Maund</th>
+              <th style="text-align: right; padding: 8px;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${txn.items.map(item => `
+              <tr style="border-bottom: 1px solid #ddd;">
+                <td style="padding: 8px;">${item.fish_name}</td>
+                <td style="text-align: right; padding: 8px;">${formatWeight(item.weight_kg)}</td>
+                <td style="text-align: right; padding: 8px;">Rs.${item.price_per_maund.toFixed(2)}</td>
+                <td style="text-align: right; padding: 8px;">Rs.${item.subtotal.toFixed(2)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <div style="text-align: right; margin-bottom: 20px;">
+          <p style="font-size: 18px; margin: 5px 0;"><strong>Total: Rs.${txn.total_amount.toFixed(2)}</strong></p>
+          <p style="margin: 5px 0;">Paid: Rs.${txn.paid_amount.toFixed(2)}</p>
+          <p style="margin: 5px 0; ${txn.balance_change < 0 ? 'color: red;' : txn.balance_change > 0 ? 'color: green;' : ''}">
+            ${txn.balance_change < 0 ? 'Outstanding' : txn.balance_change > 0 ? 'Excess Paid' : 'Balanced'}: 
+            Rs.${Math.abs(txn.balance_change).toFixed(2)}
+          </p>
+          <p style="margin: 5px 0; font-weight: bold;">
+            Customer Balance: Rs.${Math.abs(txn.balance_after).toFixed(2)} 
+            ${txn.balance_after < 0 ? '(Outstanding)' : txn.balance_after > 0 ? '(Prepaid)' : '(Balanced)'}
+          </p>
+        </div>
+
+        ${txn.notes ? `<div style="margin-top: 20px; padding: 10px; background: #f5f5f5;"><strong>Notes:</strong> ${txn.notes}</div>` : ''}
+
+        <div style="margin-top: 30px; text-align: center; border-top: 2px solid #000; padding-top: 10px;">
+          <p style="margin: 0;">Thank you for your business!</p>
+        </div>
+      </div>
+    `;
+    
+    document.getElementById('viewReceiptModal').classList.add('active');
+  } catch (error) {
+    console.error('Error viewing transaction:', error);
+    showAlert('Failed to load transaction receipt', 'error');
+  }
+}
+
+function closeViewReceiptModal() {
+  document.getElementById('viewReceiptModal').classList.remove('active');
+}
+
+function printReceipt() {
+  const receiptContent = document.getElementById('receiptContent').innerHTML;
+  const printWindow = window.open('', '', 'height=600,width=800');
+  
+  printWindow.document.write('<html><head><title>Print Receipt</title>');
+  printWindow.document.write('</head><body>');
+  printWindow.document.write(receiptContent);
+  printWindow.document.write('</body></html>');
+  
+  printWindow.document.close();
+  printWindow.print();
+}
+
+// Helper function to format weight
+function formatWeight(totalKg) {
+  const KG_PER_MAUND = 40;
+  if (totalKg < KG_PER_MAUND) {
+    return `${totalKg.toFixed(2)} KG`;
+  }
+  const maunds = Math.floor(totalKg / KG_PER_MAUND);
+  const kg = totalKg % KG_PER_MAUND;
+  if (kg === 0) {
+    return `${maunds} Maund`;
+  }
+  return `${maunds} Maund ${kg.toFixed(2)} KG`;
+}
 
 // Expose functions needed by HTML onclick handlers
 window.openAddCustomerModal = openAddCustomerModal;
@@ -508,6 +690,12 @@ window.selectCustomerFromSuggestion = selectCustomerFromSuggestion;
 window.nextPage = nextPage;
 window.previousPage = previousPage;
 window.changePageSize = changePageSize;
+window.editTransactionFromCustomer = editTransactionFromCustomer;
+window.closeEditTransactionModal = closeEditTransactionModal;
+window.saveEditedTransaction = saveEditedTransaction;
+window.viewTransactionReceipt = viewTransactionReceipt;
+window.closeViewReceiptModal = closeViewReceiptModal;
+window.printReceipt = printReceipt;
 
 })(); // End of IIFE (Issue 12)
 

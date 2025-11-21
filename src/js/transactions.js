@@ -79,12 +79,12 @@ function setupCustomerSearch() {
     }, 300);
   });
   
-  // Hide suggestions when clicking outside
+  // Hide suggestions when clicking outside (use capture phase to avoid conflicts)
   document.addEventListener('click', (e) => {
     if (!searchInput.contains(e.target) && !customerSuggestionsDiv.contains(e.target)) {
       customerSuggestionsDiv.style.display = 'none';
     }
-  });
+  }, true); // Use capture phase
 }
 
 // Search customers locally (already loaded)
@@ -857,5 +857,694 @@ window.onclick = function(event) {
   if (event.target === editModal) {
     closeEditTransactionModal();
   }
+};
+
+// =====================================================
+// FARMER TRANSACTION FUNCTIONALITY
+// =====================================================
+
+let farmers = [];
+let currentFarmer = null;
+let farmerSearchTimeout;
+let farmerSuggestionsDiv;
+let isNewFish = false;
+let currentTransactionType = 'customer'; // 'customer' or 'farmer'
+
+// Load farmers on page load
+async function loadFarmersData() {
+  try {
+    const result = await window.electronAPI.getFarmers({});
+    farmers = result.data || result;
+  } catch (error) {
+    console.error('Error loading farmers:', error);
+  }
 }
 
+// Call this in the main DOMContentLoaded event
+// Note: This runs after the main loadFishCategories() in the existing DOMContentLoaded
+setTimeout(() => {
+  loadFarmersData();
+  loadFarmerFishCategories();
+  setupFarmerSearch();
+}, 500);
+
+// Switch between customer and farmer transaction types
+function switchTransactionType(type) {
+  currentTransactionType = type;
+  
+  // Update tab styling
+  const customerTab = document.getElementById('customerTab');
+  const farmerTab = document.getElementById('farmerTab');
+  const customerSection = document.getElementById('transactionForm').parentElement;
+  const farmerSection = document.getElementById('farmerTransactionSection');
+  
+  if (type === 'customer') {
+    customerTab.classList.add('active');
+    farmerTab.classList.remove('active');
+    customerTab.style.color = 'var(--primary-color)';
+    customerTab.style.borderBottomColor = 'var(--primary-color)';
+    farmerTab.style.color = 'var(--text-secondary)';
+    farmerTab.style.borderBottomColor = 'transparent';
+    customerSection.style.display = 'block';
+    farmerSection.style.display = 'none';
+  } else {
+    farmerTab.classList.add('active');
+    customerTab.classList.remove('active');
+    farmerTab.style.color = 'var(--primary-color)';
+    farmerTab.style.borderBottomColor = 'var(--primary-color)';
+    customerTab.style.color = 'var(--text-secondary)';
+    customerTab.style.borderBottomColor = 'transparent';
+    customerSection.style.display = 'none';
+    farmerSection.style.display = 'block';
+  }
+}
+
+// Load fish categories for farmer dropdown
+function loadFarmerFishCategories() {
+  const select = document.getElementById('farmerFishSelect');
+  if (!select) return;
+  
+  select.innerHTML = '<option value="">-- Select Existing Fish --</option>';
+  
+  fishCategories.forEach(fish => {
+    const option = document.createElement('option');
+    option.value = fish.id;
+    option.textContent = fish.name;
+    option.dataset.price = fish.price_per_maund;
+    select.appendChild(option);
+  });
+}
+
+// Setup farmer search with autocomplete
+function setupFarmerSearch() {
+  const searchInput = document.getElementById('farmerSearch');
+  farmerSuggestionsDiv = document.getElementById('farmerSuggestions');
+  
+  if (!searchInput || !farmerSuggestionsDiv) return;
+  
+  searchInput.addEventListener('input', (e) => {
+    clearTimeout(farmerSearchTimeout);
+    const query = e.target.value.trim();
+    
+    if (!query) {
+      farmerSuggestionsDiv.style.display = 'none';
+      clearSelectedFarmer();
+      return;
+    }
+    
+    // Debounce
+    farmerSearchTimeout = setTimeout(() => {
+      searchFarmersLocal(query);
+    }, 300);
+  });
+  
+  // Hide suggestions when clicking outside (use capture phase to avoid conflicts)
+  document.addEventListener('click', (e) => {
+    if (!searchInput.contains(e.target) && !farmerSuggestionsDiv.contains(e.target)) {
+      farmerSuggestionsDiv.style.display = 'none';
+    }
+  }, true); // Use capture phase
+}
+
+// Search farmers locally
+function searchFarmersLocal(query) {
+  const queryLower = query.toLowerCase();
+  const results = farmers.filter(f => 
+    f.name.toLowerCase().includes(queryLower) || 
+    (f.phone && f.phone.includes(query)) ||
+    f.id.toString() === query
+  );
+  
+  displayFarmerSuggestions(results, query);
+}
+
+// Display farmer suggestions
+function displayFarmerSuggestions(results, query) {
+  if (results.length === 0) {
+    farmerSuggestionsDiv.innerHTML = '<div style="padding: 15px; text-align: center; color: #999;">No farmers found</div>';
+    farmerSuggestionsDiv.style.display = 'block';
+    return;
+  }
+  
+  farmerSuggestionsDiv.innerHTML = results.slice(0, 5).map(farmer => {
+    const balance = parseFloat(farmer.balance);
+    let balanceColor = '#666';
+    let balanceText = 'Balanced';
+    
+    if (balance < 0) {
+      balanceColor = '#d32f2f';
+      balanceText = `We Owe: Rs.${Math.abs(balance).toFixed(2)}`;
+    } else if (balance > 0) {
+      balanceColor = '#388e3c';
+      balanceText = `Credit: Rs.${balance.toFixed(2)}`;
+    } else {
+      balanceText = 'Balance: Rs.0.00';
+    }
+    
+    return `
+      <div class="suggestion-item" onclick="selectFarmerFromSuggestion(${farmer.id}, '${farmer.name.replace(/'/g, "\\'")}')">
+        <div class="suggestion-name">${farmer.name}</div>
+        <div class="suggestion-details">
+          <span><img src="../assets/mobile.png" alt="Phone" style="width: 14px; height: 14px; vertical-align: middle;"> ${farmer.phone || 'No phone'}</span>
+          <span style="color: ${balanceColor};">${balanceText}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  farmerSuggestionsDiv.style.display = 'block';
+}
+
+// Select farmer from suggestion
+function selectFarmerFromSuggestion(farmerId, farmerName) {
+  document.getElementById('selectedFarmerId').value = farmerId;
+  document.getElementById('farmerSearch').value = farmerName;
+  farmerSuggestionsDiv.style.display = 'none';
+  
+  currentFarmer = farmers.find(f => f.id === farmerId);
+  updateFarmerInfo();
+}
+
+// Show all farmers
+function showAllFarmers() {
+  displayFarmerSuggestions(farmers, '');
+}
+
+// Clear selected farmer
+function clearSelectedFarmer() {
+  document.getElementById('selectedFarmerId').value = '';
+  document.getElementById('farmerBalance').innerHTML = 'Search and select a farmer';
+  document.getElementById('farmerBalance').className = '';
+  currentFarmer = null;
+}
+
+// Update farmer info when selected
+function updateFarmerInfo() {
+  const balanceDiv = document.getElementById('farmerBalance');
+  
+  if (!currentFarmer) {
+    balanceDiv.innerHTML = 'Search and select a farmer';
+    balanceDiv.className = '';
+    return;
+  }
+
+  const balance = parseFloat(currentFarmer.balance);
+  let balanceText, balanceClass;
+
+  if (balance < 0) {
+    balanceText = `Rs.${Math.abs(balance).toFixed(2)} We Owe`;
+    balanceClass = 'balance outstanding';
+  } else if (balance > 0) {
+    balanceText = `Rs.${balance.toFixed(2)} Credit`;
+    balanceClass = 'balance prepaid';
+  } else {
+    balanceText = 'Rs.0.00 Balanced';
+    balanceClass = 'balance zero';
+  }
+
+  balanceDiv.innerHTML = balanceText;
+  balanceDiv.className = balanceClass;
+}
+
+// Toggle new fish input
+function toggleNewFishInput() {
+  const newFishSection = document.getElementById('newFishInputSection');
+  const fishSelect = document.getElementById('farmerFishSelect');
+  
+  isNewFish = !isNewFish;
+  
+  if (isNewFish) {
+    newFishSection.style.display = 'block';
+    fishSelect.disabled = true;
+    fishSelect.value = '';
+    document.getElementById('farmerPricePerMaund').value = '';
+    document.getElementById('farmerPricePerMaund').readOnly = false;
+  } else {
+    newFishSection.style.display = 'none';
+    fishSelect.disabled = false;
+    document.getElementById('newFishName').value = '';
+    document.getElementById('farmerPricePerMaund').readOnly = false;
+  }
+  
+  calculateFarmerTotals();
+}
+
+// Update farmer fish price when fish is selected
+function updateFarmerFishPrice() {
+  const select = document.getElementById('farmerFishSelect');
+  const priceInput = document.getElementById('farmerPricePerMaund');
+  
+  if (select.value) {
+    const selectedOption = select.options[select.selectedIndex];
+    // For farmer transactions, we start fresh with farmer's price
+    // But we can show the current category price as reference
+    priceInput.value = '';
+    priceInput.placeholder = `Current: Rs.${parseFloat(selectedOption.dataset.price).toFixed(2)}`;
+  } else {
+    priceInput.value = '';
+    priceInput.placeholder = '';
+  }
+  
+  calculateFarmerTotals();
+}
+
+// Calculate farmer total weight
+function calculateFarmerTotalWeight() {
+  const maunds = parseFloat(document.getElementById('farmerWeightMaund').value) || 0;
+  const kg = parseFloat(document.getElementById('farmerWeightKg').value) || 0;
+  
+  const totalKg = maundAndKgToKg(maunds, kg);
+  
+  const displayText = formatWeight(totalKg);
+  document.getElementById('farmerTotalWeight').value = displayText;
+  
+  calculateFarmerTotals();
+}
+
+// Calculate all farmer transaction totals
+function calculateFarmerTotals() {
+  const maunds = parseFloat(document.getElementById('farmerWeightMaund').value) || 0;
+  const kg = parseFloat(document.getElementById('farmerWeightKg').value) || 0;
+  const totalKg = maundAndKgToKg(maunds, kg);
+  
+  const farmerPricePerMaund = parseFloat(document.getElementById('farmerPricePerMaund').value) || 0;
+  const markupPercent = parseFloat(document.getElementById('customerMarkup').value) || 0;
+  
+  // Calculate final price per maund (with markup)
+  const markupAmount = (farmerPricePerMaund * markupPercent) / 100;
+  const finalPrice = farmerPricePerMaund + markupAmount;
+  document.getElementById('finalPricePerMaund').value = finalPrice > 0 ? `Rs.${finalPrice.toFixed(2)}` : 'Rs.0.00';
+  
+  // Calculate total fish value (what farmer gets for the fish)
+  const totalFishValue = roundMoney((totalKg / KG_PER_MAUND) * farmerPricePerMaund);
+  document.getElementById('totalFishValue').value = formatMoney(totalFishValue);
+  
+  // Calculate commission on original farmer price
+  const commissionPercent = parseFloat(document.getElementById('commissionPercent').value) || 0;
+  const commissionAmount = roundMoney((totalFishValue * commissionPercent) / 100);
+  document.getElementById('commissionAmount').value = formatMoney(commissionAmount);
+  
+  // Get other charges
+  const munshiNama = parseFloat(document.getElementById('munshiNama').value) || 0;
+  const barafPrice = parseFloat(document.getElementById('barafPrice').value) || 0;
+  const labourCharges = parseFloat(document.getElementById('labourCharges').value) || 0;
+  const extraCharges = parseFloat(document.getElementById('extraCharges').value) || 0;
+  
+  // Calculate net to farmer
+  const netToFarmer = roundMoney(totalFishValue - commissionAmount - munshiNama - barafPrice - labourCharges - extraCharges);
+  document.getElementById('netToFarmer').textContent = formatMoney(netToFarmer);
+  
+  // Set paid amount to net amount by default if it's 0
+  const paidInput = document.getElementById('farmerPaidAmount');
+  if (parseFloat(paidInput.value) === 0 && netToFarmer > 0) {
+    paidInput.value = netToFarmer.toFixed(2);
+  }
+  
+  // Calculate balance
+  calculateFarmerBalance();
+}
+
+// Calculate farmer balance change based on paid amount
+function calculateFarmerBalance() {
+  const netToFarmer = parseFloat(document.getElementById('netToFarmer').textContent.replace(/,/g, '')) || 0;
+  const paidAmount = parseFloat(document.getElementById('farmerPaidAmount').value) || 0;
+  
+  // Balance change = what we owe - what we paid
+  // Negative balance = we owe the farmer
+  const balanceChange = -(netToFarmer - paidAmount);
+  
+  const balanceInput = document.getElementById('farmerBalanceChange');
+  const absBalance = Math.abs(balanceChange);
+  
+  if (balanceChange < 0) {
+    // Negative = we owe more to the farmer
+    balanceInput.value = `-Rs.${absBalance.toFixed(2)} (We Owe)`;
+    balanceInput.style.color = '#d32f2f';
+  } else if (balanceChange > 0) {
+    // Positive = we paid more (farmer has credit)
+    balanceInput.value = `+Rs.${absBalance.toFixed(2)} (Credit)`;
+    balanceInput.style.color = '#388e3c';
+  } else {
+    balanceInput.value = 'Rs.0.00 (Balanced)';
+    balanceInput.style.color = 'var(--text-secondary)';
+  }
+}
+
+// Toggle farmer form
+function toggleFarmerForm() {
+  const form = document.getElementById('farmerTransactionForm');
+  const icon = document.getElementById('toggleFarmerIcon');
+  
+  if (form.style.display === 'none') {
+    form.style.display = 'block';
+    icon.textContent = '▼';
+  } else {
+    form.style.display = 'none';
+    icon.textContent = '▶';
+  }
+}
+
+// Save farmer transaction
+async function saveFarmerTransaction() {
+  const saveBtn = event ? event.target : document.querySelector('#farmerTransactionSection .btn-primary');
+  setButtonLoading(saveBtn, true);
+  
+  try {
+    // Get farmer ID
+    const farmerId = parseInt(document.getElementById('selectedFarmerId').value);
+    if (!farmerId) {
+      showAlert('Please select a farmer', 'warning');
+      return;
+    }
+    
+    // Get fish details
+    let fishCategoryId;
+    let fishName;
+    
+    if (isNewFish) {
+      fishName = document.getElementById('newFishName').value.trim();
+      if (!fishName) {
+        showAlert('Please enter the new fish name', 'warning');
+        return;
+      }
+    } else {
+      const fishSelect = document.getElementById('farmerFishSelect');
+      fishCategoryId = parseInt(fishSelect.value);
+      if (!fishCategoryId) {
+        showAlert('Please select a fish or add a new one', 'warning');
+        return;
+      }
+      fishName = fishSelect.options[fishSelect.selectedIndex].text;
+    }
+    
+    // Get weight
+    const weightMaund = parseInt(document.getElementById('farmerWeightMaund').value) || 0;
+    const weightKg = parseFloat(document.getElementById('farmerWeightKg').value) || 0;
+    const totalWeightKg = maundAndKgToKg(weightMaund, weightKg);
+    
+    if (totalWeightKg <= 0) {
+      showAlert('Please enter a valid weight', 'warning');
+      return;
+    }
+    
+    // Get prices
+    const farmerPricePerMaund = parseFloat(document.getElementById('farmerPricePerMaund').value);
+    if (!farmerPricePerMaund || farmerPricePerMaund <= 0) {
+      showAlert('Please enter farmer price per maund', 'warning');
+      return;
+    }
+    
+    const markupPercent = parseFloat(document.getElementById('customerMarkup').value);
+    if (!markupPercent || markupPercent < 1 || markupPercent > 100) {
+      showAlert('Please enter customer markup (1-100%)', 'warning');
+      return;
+    }
+    
+    const finalPricePerMaund = roundMoney(farmerPricePerMaund + (farmerPricePerMaund * markupPercent / 100));
+    
+    // Calculate total fish value
+    const totalFishValue = roundMoney((totalWeightKg / KG_PER_MAUND) * farmerPricePerMaund);
+    
+    // Get commission
+    const commissionPercent = parseFloat(document.getElementById('commissionPercent').value);
+    if (!commissionPercent || commissionPercent < 1 || commissionPercent > 100) {
+      showAlert('Please enter commission percentage (1-100%)', 'warning');
+      return;
+    }
+    
+    const commissionAmount = roundMoney((totalFishValue * commissionPercent) / 100);
+    
+    // Get other charges
+    const munshiNama = parseFloat(document.getElementById('munshiNama').value) || 0;
+    const barafPrice = parseFloat(document.getElementById('barafPrice').value) || 0;
+    const labourCharges = parseFloat(document.getElementById('labourCharges').value) || 0;
+    const extraCharges = parseFloat(document.getElementById('extraCharges').value) || 0;
+    const notes = document.getElementById('farmerNotes').value.trim();
+    
+    // Calculate net to farmer
+    const totalAmount = roundMoney(totalFishValue - commissionAmount - munshiNama - barafPrice - labourCharges - extraCharges);
+    
+    // Get paid amount
+    const paidAmount = parseFloat(document.getElementById('farmerPaidAmount').value) || 0;
+    
+    // Validate paid amount
+    if (paidAmount < 0) {
+      showAlert('Paid amount cannot be negative', 'warning');
+      return;
+    }
+    
+    // Confirm if partially paid or unpaid
+    if (paidAmount < totalAmount) {
+      const outstandingAmount = totalAmount - paidAmount;
+      const confirmSave = confirm(
+        `Outstanding amount: Rs.${outstandingAmount.toFixed(2)}\n\nThis will be added to the farmer's balance (you will owe the farmer). Continue?`
+      );
+      if (!confirmSave) return;
+    }
+    
+    // Calculate balance change
+    // Balance change = what we owe - what we paid
+    // Negative balance = we owe the farmer
+    const currentBalance = currentFarmer ? parseFloat(currentFarmer.balance) : 0;
+    const balanceChange = -(totalAmount - paidAmount); // Negative = we owe more
+    const balanceAfter = roundMoney(currentBalance + balanceChange);
+    
+    // If new fish, create it first
+    if (isNewFish) {
+      try {
+        const newFishId = await window.electronAPI.addFishCategory({
+          name: fishName,
+          price_per_maund: finalPricePerMaund,
+          active: 1
+        });
+        fishCategoryId = newFishId;
+        
+        // Reload fish categories
+        await loadFishCategories();
+        loadFarmerFishCategories();
+        
+        showAlert(`New fish "${fishName}" added to categories!`, 'success');
+      } catch (error) {
+        showAlert('Failed to add new fish: ' + error.message, 'error');
+        return;
+      }
+    } else {
+      // Update existing fish category price with markup
+      try {
+        const fishCategory = fishCategories.find(f => f.id === fishCategoryId);
+        if (fishCategory) {
+          await window.electronAPI.updateFishCategory(fishCategoryId, {
+            name: fishCategory.name,
+            price_per_maund: finalPricePerMaund
+          });
+          
+          // Reload fish categories
+          await loadFishCategories();
+          loadFarmerFishCategories();
+        }
+      } catch (error) {
+        console.error('Failed to update fish price:', error);
+        // Continue anyway, don't block the transaction
+      }
+    }
+    
+    // Get current date and time
+    const transactionDate = getCurrentDate();
+    const transactionTime = getCurrentTime();
+    
+    // Create farmer transaction
+    const farmerTransaction = {
+      farmer_id: farmerId,
+      transaction_date: transactionDate,
+      transaction_time: transactionTime,
+      fish_category_id: fishCategoryId,
+      fish_name: fishName,
+      weight_maund: weightMaund,
+      weight_kg: weightKg,
+      total_weight_kg: totalWeightKg,
+      price_per_maund: farmerPricePerMaund,
+      customer_markup_percentage: markupPercent,
+      final_price_per_maund: finalPricePerMaund,
+      total_fish_value: totalFishValue,
+      commission_percentage: commissionPercent,
+      commission_amount: commissionAmount,
+      munshi_nama: munshiNama,
+      baraf_price: barafPrice,
+      labour_charges: labourCharges,
+      extra_charges: extraCharges,
+      total_amount: totalAmount,
+      paid_amount: paidAmount,
+      balance_change: balanceChange,
+      balance_after: balanceAfter,
+      notes: notes || null
+    };
+    
+    const transactionId = await window.electronAPI.addFarmerTransaction(farmerTransaction);
+    showAlert('Farmer transaction saved successfully!', 'success');
+    
+    // Show receipt
+    setTimeout(() => {
+      viewFarmerTransaction(transactionId);
+    }, 500);
+    
+    // Clear form and reload
+    clearFarmerForm();
+    await loadFarmersData();
+    
+  } catch (error) {
+    let errorMessage = 'Failed to save farmer transaction';
+    if (error && error.message) {
+      errorMessage = `Error: ${error.message}`;
+    }
+    showAlert(errorMessage, 'error');
+  } finally {
+    setButtonLoading(saveBtn, false);
+  }
+}
+
+// View farmer transaction (receipt)
+async function viewFarmerTransaction(id) {
+  try {
+    const txn = await window.electronAPI.getFarmerTransactionById(id);
+    if (!txn) {
+      showAlert('Transaction not found', 'error');
+      return;
+    }
+
+    const date = new Date(txn.transaction_date);
+    const billContent = document.getElementById('billContent');
+    
+    billContent.innerHTML = `
+      <div style="font-family: monospace; padding: 20px; background: white;">
+        <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px;">
+          <h2 style="margin: 0;">FishMarket</h2>
+          <p style="margin: 5px 0;">Farmer Transaction Receipt</p>
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+          <p><strong>Receipt #:</strong> ${txn.id}</p>
+          <p><strong>Date:</strong> ${date.toLocaleDateString('en-IN')} ${txn.transaction_time}</p>
+          <p><strong>Farmer:</strong> ${txn.farmer_name}</p>
+          <p><strong>Phone:</strong> ${txn.farmer_phone || 'N/A'}</p>
+        </div>
+
+        <div style="margin-bottom: 20px; padding: 15px; background: #f0f8ff; border-radius: 8px;">
+          <h3 style="margin-top: 0;">Fish Details</h3>
+          <p><strong>Fish:</strong> ${txn.fish_name}</p>
+          <p><strong>Weight:</strong> ${formatWeight(txn.total_weight_kg)}</p>
+          <p><strong>Price per Maund:</strong> Rs.${txn.price_per_maund.toFixed(2)}</p>
+          <p style="font-size: 18px; margin: 10px 0;"><strong>Total Fish Value: Rs.${txn.total_fish_value.toFixed(2)}</strong></p>
+        </div>
+
+        <div style="margin-bottom: 20px;">
+          <h3>Deductions</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr style="border-bottom: 1px solid #ddd;">
+              <td style="padding: 8px;">Commission (${txn.commission_percentage}%)</td>
+              <td style="text-align: right; padding: 8px; color: #d32f2f;">- Rs.${txn.commission_amount.toFixed(2)}</td>
+            </tr>
+            ${txn.munshi_nama > 0 ? `
+            <tr style="border-bottom: 1px solid #ddd;">
+              <td style="padding: 8px;">Munshi Nama</td>
+              <td style="text-align: right; padding: 8px; color: #d32f2f;">- Rs.${txn.munshi_nama.toFixed(2)}</td>
+            </tr>
+            ` : ''}
+            ${txn.baraf_price > 0 ? `
+            <tr style="border-bottom: 1px solid #ddd;">
+              <td style="padding: 8px;">Baraf Price</td>
+              <td style="text-align: right; padding: 8px; color: #d32f2f;">- Rs.${txn.baraf_price.toFixed(2)}</td>
+            </tr>
+            ` : ''}
+            ${txn.labour_charges > 0 ? `
+            <tr style="border-bottom: 1px solid #ddd;">
+              <td style="padding: 8px;">Labour Charges</td>
+              <td style="text-align: right; padding: 8px; color: #d32f2f;">- Rs.${txn.labour_charges.toFixed(2)}</td>
+            </tr>
+            ` : ''}
+            ${txn.extra_charges > 0 ? `
+            <tr style="border-bottom: 1px solid #ddd;">
+              <td style="padding: 8px;">Extra Charges</td>
+              <td style="text-align: right; padding: 8px; color: #d32f2f;">- Rs.${txn.extra_charges.toFixed(2)}</td>
+            </tr>
+            ` : ''}
+          </table>
+        </div>
+
+        <div style="text-align: right; margin-bottom: 20px;">
+          <p style="font-size: 24px; margin: 5px 0; font-weight: bold;">Total Net Amount: Rs.${txn.total_amount.toFixed(2)}</p>
+          <p style="font-size: 18px; margin: 5px 0; color: #2e7d32;">Paid: Rs.${(txn.paid_amount || 0).toFixed(2)}</p>
+          <p style="font-size: 18px; margin: 5px 0; ${(txn.total_amount - (txn.paid_amount || 0)) > 0 ? 'color: #d32f2f;' : 'color: #666;'}">
+            ${(txn.total_amount - (txn.paid_amount || 0)) > 0 ? 'Outstanding' : 'Balance'}: Rs.${Math.abs(txn.total_amount - (txn.paid_amount || 0)).toFixed(2)}
+          </p>
+        </div>
+
+        <div style="margin-bottom: 20px; padding: 15px; background: #fff3cd; border-radius: 8px;">
+          <p style="font-weight: bold; font-size: 16px; margin: 0;">
+            Farmer Balance: Rs.${Math.abs(txn.balance_after).toFixed(2)} 
+            ${txn.balance_after < 0 ? '(We Owe)' : txn.balance_after > 0 ? '(Credit)' : '(Balanced)'}
+          </p>
+        </div>
+
+        ${txn.notes ? `<div style="margin-top: 20px; padding: 10px; background: #f5f5f5;"><strong>Notes:</strong> ${txn.notes}</div>` : ''}
+
+        <div style="margin-top: 30px; text-align: center; border-top: 2px solid #000; padding-top: 10px;">
+          <p>Thank you!</p>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('viewBillModal').classList.add('active');
+  } catch (error) {
+    console.error('Error viewing farmer transaction:', error);
+    showAlert('Failed to load transaction details', 'error');
+  }
+}
+
+// Clear farmer form
+function clearFarmerForm() {
+  document.getElementById('selectedFarmerId').value = '';
+  document.getElementById('farmerSearch').value = '';
+  document.getElementById('farmerBalance').innerHTML = 'Search and select a farmer';
+  document.getElementById('farmerBalance').className = '';
+  
+  document.getElementById('farmerFishSelect').value = '';
+  document.getElementById('newFishName').value = '';
+  document.getElementById('newFishInputSection').style.display = 'none';
+  document.getElementById('farmerFishSelect').disabled = false;
+  isNewFish = false;
+  
+  document.getElementById('farmerWeightMaund').value = '0';
+  document.getElementById('farmerWeightKg').value = '0';
+  document.getElementById('farmerTotalWeight').value = '0 Maund 0 KG';
+  document.getElementById('farmerPricePerMaund').value = '';
+  document.getElementById('customerMarkup').value = '';
+  document.getElementById('finalPricePerMaund').value = '';
+  document.getElementById('totalFishValue').value = '0.00';
+  
+  document.getElementById('commissionPercent').value = '';
+  document.getElementById('commissionAmount').value = '';
+  document.getElementById('munshiNama').value = '0';
+  document.getElementById('barafPrice').value = '0';
+  document.getElementById('labourCharges').value = '0';
+  document.getElementById('extraCharges').value = '0';
+  document.getElementById('farmerNotes').value = '';
+  
+  document.getElementById('netToFarmer').textContent = '0.00';
+  document.getElementById('farmerPaidAmount').value = '0';
+  document.getElementById('farmerBalanceChange').value = '';
+  
+  currentFarmer = null;
+}
+
+// Expose farmer transaction functions globally
+window.switchTransactionType = switchTransactionType;
+window.selectFarmerFromSuggestion = selectFarmerFromSuggestion;
+window.showAllFarmers = showAllFarmers;
+window.toggleNewFishInput = toggleNewFishInput;
+window.updateFarmerFishPrice = updateFarmerFishPrice;
+window.calculateFarmerTotalWeight = calculateFarmerTotalWeight;
+window.calculateFarmerTotals = calculateFarmerTotals;
+window.calculateFarmerBalance = calculateFarmerBalance;
+window.toggleFarmerForm = toggleFarmerForm;
+window.saveFarmerTransaction = saveFarmerTransaction;
+window.clearFarmerForm = clearFarmerForm;
