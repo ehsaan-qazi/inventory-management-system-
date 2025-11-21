@@ -44,7 +44,7 @@ A comprehensive desktop application built with Electron for managing fish market
 - **Customer Transactions**: Multi-item billing with weight-based pricing
 - **Farmer Transactions**: Fish purchase recording with automatic calculations
   - Commission percentage tracking
-  - Multiple deduction types (Munshi Nama, Baraf, Labour, Extra Charges)
+  - Multiple deduction types
   - Customer markup for resale pricing
 - Real-time balance updates
 - Receipt generation and printing
