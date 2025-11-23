@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fish Market Inventory - Transactions</title>
     <link rel="stylesheet" href="../css/styles.css">
 </head>
+
 <body>
     <div class="app-container">
         <!-- Sidebar -->
@@ -46,7 +48,8 @@
             <header class="header">
                 <div class="search-bar">
                     <input type="text" id="searchInput" placeholder="Search transactions...">
-                    <button class="search-btn"><img src="../assets/search-interface-symbol.png" alt="Search" style="width: 18px; height: 18px;"></button>
+                    <button class="search-btn"><img src="../assets/search-interface-symbol.png" alt="Search"
+                            style="width: 18px; height: 18px;"></button>
                 </div>
                 <div class="user-info">
                     <span class="user-name">Admin</span>
@@ -61,11 +64,14 @@
 
                 <!-- Transaction Type Tabs -->
                 <div style="margin-bottom: 20px;">
-                    <div class="transaction-type-tabs" style="display: flex; gap: 10px; border-bottom: 2px solid #e0e0e0;">
-                        <button id="customerTab" class="tab-button active" onclick="switchTransactionType('customer')" style="padding: 12px 30px; border: none; background: none; cursor: pointer; font-size: 16px; font-weight: 600; color: var(--primary-color); border-bottom: 3px solid var(--primary-color); transition: all 0.3s;">
+                    <div class="transaction-type-tabs"
+                        style="display: flex; gap: 10px; border-bottom: 2px solid #e0e0e0;">
+                        <button id="customerTab" class="tab-button active" onclick="switchTransactionType('customer')"
+                            style="padding: 12px 30px; border: none; background: none; cursor: pointer; font-size: 16px; font-weight: 600; color: var(--primary-color); border-bottom: 3px solid var(--primary-color); transition: all 0.3s;">
                             Customer Transaction
                         </button>
-                        <button id="farmerTab" class="tab-button" onclick="switchTransactionType('farmer')" style="padding: 12px 30px; border: none; background: none; cursor: pointer; font-size: 16px; font-weight: 600; color: var(--text-secondary); border-bottom: 3px solid transparent; transition: all 0.3s;">
+                        <button id="farmerTab" class="tab-button" onclick="switchTransactionType('farmer')"
+                            style="padding: 12px 30px; border: none; background: none; cursor: pointer; font-size: 16px; font-weight: 600; color: var(--text-secondary); border-bottom: 3px solid transparent; transition: all 0.3s;">
                             Farmer Transaction
                         </button>
                     </div>
@@ -79,23 +85,26 @@
                             <span id="toggleIcon">▼</span> Toggle Form
                         </button>
                     </div>
-                    
+
                     <div id="transactionForm" style="display: block;">
                         <div class="form-row" style="margin-bottom: 20px;">
                             <div class="form-group">
                                 <label for="customerSearch">Search Customer *</label>
                                 <div style="position: relative;">
-                                    <input type="text" id="customerSearch" class="form-control" placeholder="Type customer name or phone...">
+                                    <input type="text" id="customerSearch" class="form-control"
+                                        placeholder="Type customer name or phone...">
                                     <input type="hidden" id="customerId">
                                     <div id="customerSuggestions" class="search-suggestions"></div>
                                 </div>
                                 <small style="color: var(--text-secondary); font-size: 12px;">
-                                    Or <a href="javascript:showAllCustomers()" style="color: var(--primary-color);">view all customers</a>
+                                    Or <a href="javascript:showAllCustomers()" style="color: var(--primary-color);">view
+                                        all customers</a>
                                 </small>
                             </div>
                             <div class="form-group">
                                 <label>Customer Balance</label>
-                                <div id="customerBalance" style="padding: 10px; background: #f5f7fa; border-radius: 8px; font-weight: 600;">
+                                <div id="customerBalance"
+                                    style="padding: 10px; background: #f5f7fa; border-radius: 8px; font-weight: 600;">
                                     Search and select a customer
                                 </div>
                             </div>
@@ -130,16 +139,20 @@
                                 </div>
                                 <div class="form-group">
                                     <label for="weightMaund">Weight (Maund)</label>
-                                    <input type="number" id="weightMaund" class="form-control" step="1" min="0" value="0" oninput="calculateTotalWeightFromInputs()">
-                                    <small style="color: var(--text-secondary); font-size: 11px;">1 Maund = 40 KG</small>
+                                    <input type="number" id="weightMaund" class="form-control" step="1" min="0"
+                                        value="0" oninput="calculateTotalWeightFromInputs()">
+                                    <small style="color: var(--text-secondary); font-size: 11px;">1 Maund = 40
+                                        KG</small>
                                 </div>
                                 <div class="form-group">
                                     <label for="weightKg">Weight (KG)</label>
-                                    <input type="number" id="weightKg" class="form-control" step="0.01" min="0" value="0" oninput="calculateTotalWeightFromInputs()">
+                                    <input type="number" id="weightKg" class="form-control" step="0.01" min="0"
+                                        value="0" oninput="calculateTotalWeightFromInputs()">
                                 </div>
                                 <div class="form-group">
                                     <label for="totalWeight">Total Weight</label>
-                                    <input type="text" id="totalWeight" class="form-control" readonly value="0 Maund 0 KG" style="font-weight: 600;">
+                                    <input type="text" id="totalWeight" class="form-control" readonly
+                                        value="0 Maund 0 KG" style="font-weight: 600;">
                                 </div>
                             </div>
                             <div class="form-row">
@@ -149,7 +162,8 @@
                                 </div>
                                 <div class="form-group">
                                     <label for="itemSubtotal">Subtotal (Rs.)</label>
-                                    <input type="text" id="itemSubtotal" class="form-control" readonly value="0.00" style="font-size: 16px; font-weight: 700;">
+                                    <input type="text" id="itemSubtotal" class="form-control" readonly value="0.00"
+                                        style="font-size: 16px; font-weight: 700;">
                                 </div>
                             </div>
                             <button class="btn btn-primary" onclick="addItem()">+ Add Item</button>
@@ -160,21 +174,25 @@
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>Total Amount (Rs.)</label>
-                                    <input type="text" id="totalAmount" class="form-control" readonly value="0.00" style="font-size: 18px; font-weight: 700;">
+                                    <input type="text" id="totalAmount" class="form-control" readonly value="0.00"
+                                        style="font-size: 18px; font-weight: 700;">
                                 </div>
                                 <div class="form-group">
                                     <label for="paidAmount">Paid Amount (Rs.)</label>
-                                    <input type="number" id="paidAmount" class="form-control" step="0.01" min="0" value="0" oninput="calculateBalance()">
+                                    <input type="number" id="paidAmount" class="form-control" step="0.01" min="0"
+                                        value="0" oninput="calculateBalance()">
                                 </div>
                                 <div class="form-group">
                                     <label>Outstanding/Prepaid (Rs.)</label>
-                                    <input type="text" id="balanceChange" class="form-control" readonly value="0.00" style="font-weight: 600;">
+                                    <input type="text" id="balanceChange" class="form-control" readonly value="0.00"
+                                        style="font-weight: 600;">
                                 </div>
                             </div>
-                            
+
                             <div class="form-group">
                                 <label for="notes">Notes (Optional)</label>
-                                <textarea id="notes" class="form-control" placeholder="Add any notes or remarks..."></textarea>
+                                <textarea id="notes" class="form-control"
+                                    placeholder="Add any notes or remarks..."></textarea>
                             </div>
                         </div>
 
@@ -193,23 +211,26 @@
                             <span id="toggleFarmerIcon">▼</span> Toggle Form
                         </button>
                     </div>
-                    
+
                     <div id="farmerTransactionForm" style="display: block;">
                         <div class="form-row" style="margin-bottom: 20px;">
                             <div class="form-group">
                                 <label for="farmerSearch">Search Farmer *</label>
                                 <div style="position: relative;">
-                                    <input type="text" id="farmerSearch" class="form-control" placeholder="Type farmer name or phone...">
+                                    <input type="text" id="farmerSearch" class="form-control"
+                                        placeholder="Type farmer name or phone...">
                                     <input type="hidden" id="selectedFarmerId">
                                     <div id="farmerSuggestions" class="search-suggestions"></div>
                                 </div>
                                 <small style="color: var(--text-secondary); font-size: 12px;">
-                                    Or <a href="javascript:showAllFarmers()" style="color: var(--primary-color);">view all farmers</a>
+                                    Or <a href="javascript:showAllFarmers()" style="color: var(--primary-color);">view
+                                        all farmers</a>
                                 </small>
                             </div>
                             <div class="form-group">
                                 <label>Farmer Balance</label>
-                                <div id="farmerBalance" style="padding: 10px; background: #f5f7fa; border-radius: 8px; font-weight: 600;">
+                                <div id="farmerBalance"
+                                    style="padding: 10px; background: #f5f7fa; border-radius: 8px; font-weight: 600;">
                                     Search and select a farmer
                                 </div>
                             </div>
@@ -221,58 +242,70 @@
                             <div class="form-row">
                                 <div class="form-group" style="flex: 2;">
                                     <label for="farmerFishSelect">Select Fish</label>
-                                    <select id="farmerFishSelect" class="form-control" onchange="updateFarmerFishPrice()">
+                                    <select id="farmerFishSelect" class="form-control"
+                                        onchange="updateFarmerFishPrice()">
                                         <option value="">-- Select Existing Fish --</option>
                                     </select>
                                 </div>
                                 <div class="form-group" style="flex: 1; display: flex; align-items: flex-end;">
-                                    <button class="btn btn-outline" onclick="toggleNewFishInput()" style="width: 100%;">+ New Fish</button>
+                                    <button class="btn btn-outline" onclick="toggleNewFishInput()"
+                                        style="width: 100%;">+ New Fish</button>
                                 </div>
                             </div>
-                            
+
                             <!-- New Fish Input (hidden by default) -->
                             <div id="newFishInputSection" style="display: none; margin-top: 15px;">
                                 <div class="form-group">
                                     <label for="newFishName">New Fish Name *</label>
-                                    <input type="text" id="newFishName" class="form-control" placeholder="Enter new fish name">
+                                    <input type="text" id="newFishName" class="form-control"
+                                        placeholder="Enter new fish name">
                                 </div>
                             </div>
 
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="farmerWeightMaund">Weight (Maund)</label>
-                                    <input type="number" id="farmerWeightMaund" class="form-control" step="1" min="0" value="0" oninput="calculateFarmerTotalWeight()">
-                                    <small style="color: var(--text-secondary); font-size: 11px;">1 Maund = 40 KG</small>
+                                    <input type="number" id="farmerWeightMaund" class="form-control" step="1" min="0"
+                                        value="0" oninput="calculateFarmerTotalWeight()">
+                                    <small style="color: var(--text-secondary); font-size: 11px;">1 Maund = 40
+                                        KG</small>
                                 </div>
                                 <div class="form-group">
                                     <label for="farmerWeightKg">Weight (KG)</label>
-                                    <input type="number" id="farmerWeightKg" class="form-control" step="0.01" min="0" value="0" oninput="calculateFarmerTotalWeight()">
+                                    <input type="number" id="farmerWeightKg" class="form-control" step="0.01" min="0"
+                                        value="0" oninput="calculateFarmerTotalWeight()">
                                 </div>
                                 <div class="form-group">
                                     <label for="farmerTotalWeight">Total Weight</label>
-                                    <input type="text" id="farmerTotalWeight" class="form-control" readonly value="0 Maund 0 KG" style="font-weight: 600;">
+                                    <input type="text" id="farmerTotalWeight" class="form-control" readonly
+                                        value="0 Maund 0 KG" style="font-weight: 600;">
                                 </div>
                             </div>
 
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="farmerPricePerMaund">Farmer Price per Maund (Rs.) *</label>
-                                    <input type="number" id="farmerPricePerMaund" class="form-control" step="0.01" min="0" oninput="calculateFarmerTotals()">
+                                    <input type="number" id="farmerPricePerMaund" class="form-control" step="0.01"
+                                        min="0" oninput="calculateFarmerTotals()">
                                 </div>
                                 <div class="form-group">
                                     <label for="customerMarkup">Customer Markup (%) *</label>
-                                    <input type="number" id="customerMarkup" class="form-control" step="1" min="1" max="100" placeholder="1-100" oninput="calculateFarmerTotals()">
-                                    <small style="color: var(--text-secondary); font-size: 11px;">Will be added to fish category price</small>
+                                    <input type="number" id="customerMarkup" class="form-control" step="1" min="0"
+                                        max="100" placeholder="0-100" oninput="calculateFarmerTotals()">
+                                    <small style="color: var(--text-secondary); font-size: 11px;">0% = no markup, will
+                                        be added to fish category price</small>
                                 </div>
                                 <div class="form-group">
                                     <label>Final Price/Maund (with markup)</label>
-                                    <input type="text" id="finalPricePerMaund" class="form-control" readonly style="font-weight: 600; background: #e3f2fd;">
+                                    <input type="text" id="finalPricePerMaund" class="form-control" readonly
+                                        style="font-weight: 600; background: #e3f2fd;">
                                 </div>
                             </div>
 
                             <div class="form-group">
                                 <label>Total Fish Value (Rs.)</label>
-                                <input type="text" id="totalFishValue" class="form-control" readonly value="0.00" style="font-size: 18px; font-weight: 700; background: #e8f5e9;">
+                                <input type="text" id="totalFishValue" class="form-control" readonly value="0.00"
+                                    style="font-size: 18px; font-weight: 700; background: #e8f5e9;">
                             </div>
                         </div>
 
@@ -282,71 +315,184 @@
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="commissionPercent">Commission (%) *</label>
-                                    <input type="number" id="commissionPercent" class="form-control" step="1" min="1" max="100" placeholder="1-100" oninput="calculateFarmerTotals()">
-                                    <small style="color: var(--text-secondary); font-size: 11px;">On original farmer price</small>
+                                    <input type="number" id="commissionPercent" class="form-control" step="1" min="0"
+                                        max="100" placeholder="0-100" oninput="calculateFarmerTotals()">
+                                    <small style="color: var(--text-secondary); font-size: 11px;">0% = no commission, on
+                                        original farmer price</small>
                                 </div>
                                 <div class="form-group">
                                     <label>Commission Amount (Rs.)</label>
-                                    <input type="text" id="commissionAmount" class="form-control" readonly style="font-weight: 600; color: #d32f2f;">
+                                    <input type="text" id="commissionAmount" class="form-control" readonly
+                                        style="font-weight: 600; color: #d32f2f;">
                                 </div>
                             </div>
 
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="munshiNama">Munshi Nama (Rs.)</label>
-                                    <input type="number" id="munshiNama" class="form-control" step="0.01" min="0" value="0" oninput="calculateFarmerTotals()">
+                                    <input type="number" id="munshiNama" class="form-control" step="0.01" min="0"
+                                        value="0" oninput="calculateFarmerTotals()">
                                 </div>
                                 <div class="form-group">
                                     <label for="barafPrice">Baraf Price (Rs.)</label>
-                                    <input type="number" id="barafPrice" class="form-control" step="0.01" min="0" value="0" oninput="calculateFarmerTotals()">
+                                    <input type="number" id="barafPrice" class="form-control" step="0.01" min="0"
+                                        value="0" oninput="calculateFarmerTotals()">
                                 </div>
                             </div>
 
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="labourCharges">Labour Charges (Rs.)</label>
-                                    <input type="number" id="labourCharges" class="form-control" step="0.01" min="0" value="0" oninput="calculateFarmerTotals()">
+                                    <input type="number" id="labourCharges" class="form-control" step="0.01" min="0"
+                                        value="0" oninput="calculateFarmerTotals()">
                                 </div>
                                 <div class="form-group">
                                     <label for="extraCharges">Extra Charges (Rs.)</label>
-                                    <input type="number" id="extraCharges" class="form-control" step="0.01" min="0" value="0" oninput="calculateFarmerTotals()">
+                                    <input type="number" id="extraCharges" class="form-control" step="0.01" min="0"
+                                        value="0" oninput="calculateFarmerTotals()">
                                 </div>
                             </div>
 
                             <div class="form-group">
                                 <label for="farmerNotes">Notes (Optional)</label>
-                                <textarea id="farmerNotes" class="form-control" placeholder="Add any notes or remarks..."></textarea>
+                                <textarea id="farmerNotes" class="form-control"
+                                    placeholder="Add any notes or remarks..."></textarea>
                             </div>
                         </div>
 
+                        <!-- Bill Preview Section -->
+                        <div
+                            style="background: #ffffff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid #e0e0e0;">
+                            <h3
+                                style="margin: 0 0 15px 0; font-size: 18px; border-bottom: 2px solid #333; padding-bottom: 10px;">
+                                📋 Bill Preview</h3>
+
+                            <table style="width: 100%; border-collapse: collapse; font-family: monospace;">
+                                <tbody>
+                                    <!-- Total Fish Value -->
+                                    <tr style="border-bottom: 1px solid #e0e0e0;">
+                                        <td style="padding: 10px 0; font-weight: 600;">Total Fish Value</td>
+                                        <td
+                                            style="padding: 10px 0; text-align: right; font-weight: 600; color: #2e7d32;">
+                                            Rs.<span id="billTotalFishValue">0.00</span>
+                                        </td>
+                                    </tr>
+
+                                    <!-- Deductions Header -->
+                                    <tr>
+                                        <td colspan="2"
+                                            style="padding: 10px 0 5px 0; font-weight: 600; color: var(--text-secondary); font-size: 14px;">
+                                            Deductions:
+                                        </td>
+                                    </tr>
+
+                                    <!-- Commission -->
+                                    <tr id="billCommissionRow" style="display: none;">
+                                        <td style="padding: 5px 0 5px 20px; color: var(--text-secondary);">
+                                            - Commission (<span id="billCommissionPercent">0</span>%)
+                                        </td>
+                                        <td style="padding: 5px 0; text-align: right; color: #d32f2f;">
+                                            Rs.<span id="billCommissionAmount">0.00</span>
+                                        </td>
+                                    </tr>
+
+                                    <!-- Munshi Nama -->
+                                    <tr id="billMunshiRow" style="display: none;">
+                                        <td style="padding: 5px 0 5px 20px; color: var(--text-secondary);">
+                                            - Munshi Nama
+                                        </td>
+                                        <td style="padding: 5px 0; text-align: right; color: #d32f2f;">
+                                            Rs.<span id="billMunshiNama">0.00</span>
+                                        </td>
+                                    </tr>
+
+                                    <!-- Baraf Price -->
+                                    <tr id="billBarafRow" style="display: none;">
+                                        <td style="padding: 5px 0 5px 20px; color: var(--text-secondary);">
+                                            - Baraf Price
+                                        </td>
+                                        <td style="padding: 5px 0; text-align: right; color: #d32f2f;">
+                                            Rs.<span id="billBarafPrice">0.00</span>
+                                        </td>
+                                    </tr>
+
+                                    <!-- Labour Charges -->
+                                    <tr id="billLabourRow" style="display: none;">
+                                        <td style="padding: 5px 0 5px 20px; color: var(--text-secondary);">
+                                            - Labour Charges
+                                        </td>
+                                        <td style="padding: 5px 0; text-align: right; color: #d32f2f;">
+                                            Rs.<span id="billLabourCharges">0.00</span>
+                                        </td>
+                                    </tr>
+
+                                    <!-- Extra Charges -->
+                                    <tr id="billExtraRow" style="display: none;">
+                                        <td style="padding: 5px 0 5px 20px; color: var(--text-secondary);">
+                                            - Extra Charges
+                                        </td>
+                                        <td style="padding: 5px 0; text-align: right; color: #d32f2f;">
+                                            Rs.<span id="billExtraCharges">0.00</span>
+                                        </td>
+                                    </tr>
+
+                                    <!-- Net Amount -->
+                                    <tr style="border-top: 2px solid #333; border-bottom: 2px double #333;">
+                                        <td style="padding: 15px 0 10px 0; font-weight: 700; font-size: 16px;">
+                                            Net Amount to Farmer
+                                        </td>
+                                        <td
+                                            style="padding: 15px 0 10px 0; text-align: right; font-weight: 700; font-size: 18px; color: #1976d2;">
+                                            Rs.<span id="billNetToFarmer">0.00</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <p
+                                style="margin: 15px 0 0 0; color: var(--text-secondary); font-size: 12px; text-align: center; font-style: italic;">
+                                This preview updates automatically as you enter values
+                            </p>
+                        </div>
+
                         <!-- Payment Section -->
-                        <div style="background: #fff3cd; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid #ffc107;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+
+                        <div
+                            style="background: #fff3cd; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid #ffc107;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                                 <div>
                                     <h3 style="margin: 0 0 10px 0; font-size: 20px;">Net Amount to Farmer</h3>
-                                    <p style="margin: 0; color: var(--text-secondary);">Fish Value - Commission - All Charges</p>
+                                    <p style="margin: 0; color: var(--text-secondary);">Fish Value - Commission - All
+                                        Charges</p>
                                 </div>
                                 <div style="font-size: 32px; font-weight: 700; color: #2e7d32;">
                                     Rs.<span id="netToFarmer">0.00</span>
                                 </div>
                             </div>
-                            
-                            <div class="form-row" style="margin-top: 20px; padding-top: 20px; border-top: 2px dashed #ffc107;">
+
+                            <div class="form-row"
+                                style="margin-top: 20px; padding-top: 20px; border-top: 2px dashed #ffc107;">
                                 <div class="form-group">
                                     <label for="farmerPaidAmount">Amount Paid Now (Rs.) *</label>
-                                    <input type="number" id="farmerPaidAmount" class="form-control" step="0.01" min="0" value="0" oninput="calculateFarmerBalance()" style="font-size: 18px; font-weight: 600;">
-                                    <small style="color: var(--text-secondary); font-size: 11px;">Enter the amount you're paying to the farmer now</small>
+                                    <input type="number" id="farmerPaidAmount" class="form-control" step="0.01" min="0"
+                                        value="0" oninput="calculateFarmerBalance()"
+                                        style="font-size: 18px; font-weight: 600;">
+                                    <small style="color: var(--text-secondary); font-size: 11px;">Enter the amount
+                                        you're paying to the farmer now</small>
                                 </div>
                                 <div class="form-group">
                                     <label>Balance After Transaction</label>
-                                    <input type="text" id="farmerBalanceChange" class="form-control" readonly style="font-size: 18px; font-weight: 600; background: #f5f5f5;">
+                                    <input type="text" id="farmerBalanceChange" class="form-control" readonly
+                                        style="font-size: 18px; font-weight: 600; background: #f5f5f5;">
                                 </div>
                             </div>
                         </div>
 
                         <div style="display: flex; gap: 10px; justify-content: flex-end;">
                             <button class="btn btn-secondary" onclick="clearFarmerForm()">Clear Form</button>
-                            <button class="btn btn-primary" onclick="saveFarmerTransaction()">💾 Save Farmer Transaction</button>
+                            <button class="btn btn-primary" onclick="saveFarmerTransaction()">💾 Save Farmer
+                                Transaction</button>
                         </div>
                     </div>
                 </div>
@@ -357,13 +503,15 @@
                         <h2>Recent Transactions</h2>
                         <button class="btn btn-outline btn-small" onclick="loadTransactions()">🔄 Refresh</button>
                     </div>
-                    
+
                     <!-- Search Filters -->
-                    <div class="search-filters" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                    <div class="search-filters"
+                        style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="filterCustomerName">Filter by Customer</label>
-                                <input type="text" id="filterCustomerName" class="form-control" placeholder="Enter customer name..." onkeyup="applyFilters()">
+                                <input type="text" id="filterCustomerName" class="form-control"
+                                    placeholder="Enter customer name..." onkeyup="applyFilters()">
                             </div>
                             <div class="form-group">
                                 <label for="filterPaymentStatus">Filter by Status</label>
@@ -380,23 +528,27 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Pagination Controls -->
-                    <div class="pagination-controls" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                    <div class="pagination-controls"
+                        style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
                         <div>
-                            <select id="transPageSize" class="form-control" style="width: auto; display: inline-block;" onchange="changeTransPageSize()">
+                            <select id="transPageSize" class="form-control" style="width: auto; display: inline-block;"
+                                onchange="changeTransPageSize()">
                                 <option value="25">25 per page</option>
                                 <option value="50" selected>50 per page</option>
                                 <option value="100">100 per page</option>
                             </select>
                         </div>
                         <div class="pagination-buttons">
-                            <button class="btn btn-outline btn-small" onclick="previousTransPage()" id="prevTransBtn" disabled>← Previous</button>
+                            <button class="btn btn-outline btn-small" onclick="previousTransPage()" id="prevTransBtn"
+                                disabled>← Previous</button>
                             <span id="transPageInfo" style="margin: 0 15px; font-weight: 500;">Page 1 of 1</span>
-                            <button class="btn btn-outline btn-small" onclick="nextTransPage()" id="nextTransBtn" disabled>Next →</button>
+                            <button class="btn btn-outline btn-small" onclick="nextTransPage()" id="nextTransBtn"
+                                disabled>Next →</button>
                         </div>
                     </div>
-                    
+
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -429,12 +581,12 @@
             </div>
             <div class="modal-body">
                 <div id="editAlertContainer"></div>
-                
+
                 <div class="form-group">
                     <label>Customer</label>
                     <input type="text" id="editCustomerName" class="form-control" readonly style="background: #f0f0f0;">
                 </div>
-                
+
                 <div class="form-row">
                     <div class="form-group">
                         <label for="editPaidAmount">Paid Amount (Rs.)</label>
@@ -442,17 +594,19 @@
                     </div>
                     <div class="form-group">
                         <label>Total Amount (Rs.)</label>
-                        <input type="text" id="editTotalAmount" class="form-control" readonly style="background: #f0f0f0;">
+                        <input type="text" id="editTotalAmount" class="form-control" readonly
+                            style="background: #f0f0f0;">
                     </div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="editNotes">Notes</label>
                     <textarea id="editNotes" class="form-control"></textarea>
                 </div>
-                
+
                 <div style="padding: 10px; background: #fff3cd; border-radius: 6px; margin-top: 15px;">
-                    <strong>⚠️ Note:</strong> You can only edit the paid amount and notes. Items cannot be modified. To change items, create a new transaction.
+                    <strong>⚠️ Note:</strong> You can only edit the paid amount and notes. Items cannot be modified. To
+                    change items, create a new transaction.
                 </div>
             </div>
             <div class="modal-footer">
@@ -485,6 +639,5 @@
     <script src="../js/validation.js"></script>
     <script src="../js/transactions.js"></script>
 </body>
+
 </html>
-
-

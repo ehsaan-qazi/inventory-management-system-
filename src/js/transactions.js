@@ -62,23 +62,23 @@ async function loadCustomers() {
 function setupCustomerSearch() {
   const searchInput = document.getElementById('customerSearch');
   customerSuggestionsDiv = document.getElementById('customerSuggestions');
-  
+
   searchInput.addEventListener('input', (e) => {
     clearTimeout(searchTimeout);
     const query = e.target.value.trim();
-    
+
     if (!query) {
       customerSuggestionsDiv.style.display = 'none';
       clearSelectedCustomer();
       return;
     }
-    
+
     // Debounce
     searchTimeout = setTimeout(() => {
       searchCustomersLocal(query);
     }, 300);
   });
-  
+
   // Hide suggestions when clicking outside (use capture phase to avoid conflicts)
   document.addEventListener('click', (e) => {
     if (!searchInput.contains(e.target) && !customerSuggestionsDiv.contains(e.target)) {
@@ -90,12 +90,12 @@ function setupCustomerSearch() {
 // Search customers locally (already loaded)
 function searchCustomersLocal(query) {
   const queryLower = query.toLowerCase();
-  const results = customers.filter(c => 
-    c.name.toLowerCase().includes(queryLower) || 
+  const results = customers.filter(c =>
+    c.name.toLowerCase().includes(queryLower) ||
     (c.phone && c.phone.includes(query)) ||
     c.id.toString() === query
   );
-  
+
   displayCustomerSuggestions(results, query);
 }
 
@@ -106,14 +106,14 @@ function displayCustomerSuggestions(results, query) {
     customerSuggestionsDiv.style.display = 'block';
     return;
   }
-  
+
   const queryLower = query.toLowerCase();
-  
+
   customerSuggestionsDiv.innerHTML = results.slice(0, 5).map(customer => {
     const balance = parseFloat(customer.balance);
     let balanceColor = '#666';
     let balanceText = 'Balanced';
-    
+
     if (balance < 0) {
       balanceColor = '#d32f2f';
       balanceText = `Outstanding: Rs.${Math.abs(balance).toFixed(2)}`;
@@ -123,7 +123,7 @@ function displayCustomerSuggestions(results, query) {
     } else {
       balanceText = 'Balance: Rs.0.00';
     }
-    
+
     return `
       <div class="suggestion-item" onclick="selectCustomerFromSuggestion(${customer.id}, '${customer.name.replace(/'/g, "\\'")}')">
         <div class="suggestion-name">${customer.name}</div>
@@ -134,7 +134,7 @@ function displayCustomerSuggestions(results, query) {
       </div>
     `;
   }).join('');
-  
+
   customerSuggestionsDiv.style.display = 'block';
 }
 
@@ -143,7 +143,7 @@ function selectCustomerFromSuggestion(customerId, customerName) {
   document.getElementById('customerId').value = customerId;
   document.getElementById('customerSearch').value = customerName;
   customerSuggestionsDiv.style.display = 'none';
-  
+
   currentCustomer = customers.find(c => c.id === customerId);
   updateCustomerInfo();
 }
@@ -166,10 +166,10 @@ async function loadFishCategories() {
   try {
     const allFish = await window.electronAPI.getFishCategories();
     fishCategories = allFish.filter(fish => fish.active === 1);
-    
+
     const select = document.getElementById('fishCategoryId');
     select.innerHTML = '<option value="">-- Select Fish --</option>';
-    
+
     fishCategories.forEach(fish => {
       const option = document.createElement('option');
       option.value = fish.id;
@@ -186,7 +186,7 @@ async function loadFishCategories() {
 // Update customer info when selected
 function updateCustomerInfo() {
   const balanceDiv = document.getElementById('customerBalance');
-  
+
   if (!currentCustomer) {
     balanceDiv.innerHTML = 'Search and select a customer';
     balanceDiv.className = '';
@@ -215,13 +215,13 @@ function updateCustomerInfo() {
 function calculateTotalWeightFromInputs() {
   const maunds = parseFloat(document.getElementById('weightMaund').value) || 0;
   const kg = parseFloat(document.getElementById('weightKg').value) || 0;
-  
+
   const totalKg = maundAndKgToKg(maunds, kg);
-  
+
   // Update the display
   const displayText = formatWeight(totalKg);
   document.getElementById('totalWeight').value = displayText;
-  
+
   // Recalculate subtotal
   calculateItemSubtotal();
 }
@@ -230,7 +230,7 @@ function calculateTotalWeightFromInputs() {
 function updateItemPrice() {
   const select = document.getElementById('fishCategoryId');
   const priceInput = document.getElementById('pricePerMaund');
-  
+
   if (select.value) {
     const selectedOption = select.options[select.selectedIndex];
     priceInput.value = parseFloat(selectedOption.dataset.price).toFixed(2);
@@ -246,9 +246,9 @@ function calculateItemSubtotal() {
   const maunds = parseFloat(document.getElementById('weightMaund').value) || 0;
   const kg = parseFloat(document.getElementById('weightKg').value) || 0;
   const totalKg = maundAndKgToKg(maunds, kg);
-  
+
   const pricePerMaund = parseFloat(document.getElementById('pricePerMaund').value) || 0;
-  
+
   // Calculate subtotal: (total_kg / 40) * price_per_maund
   // Use money rounding to prevent floating point errors (Issue 2)
   const subtotal = roundMoney((totalKg / KG_PER_MAUND) * pricePerMaund);
@@ -296,7 +296,7 @@ function addItem() {
 
   billItems.push(item);
   renderBillItems();
-  
+
   // Clear item form
   fishSelect.value = '';
   document.getElementById('weightMaund').value = '0';
@@ -304,7 +304,7 @@ function addItem() {
   document.getElementById('totalWeight').value = '0 Maund 0 KG';
   document.getElementById('pricePerMaund').value = '';
   document.getElementById('itemSubtotal').value = '0.00';
-  
+
   calculateTotals();
 }
 
@@ -318,7 +318,7 @@ function removeItem(index) {
 // Render bill items table
 function renderBillItems() {
   const tbody = document.getElementById('itemsTable');
-  
+
   if (billItems.length === 0) {
     tbody.innerHTML = '<tr><td colspan="5" class="no-data">No items added yet</td></tr>';
     return;
@@ -342,13 +342,13 @@ function calculateTotals() {
   // Use money rounding to prevent floating point errors (Issue 2)
   const total = billItems.reduce((sum, item) => roundMoney(sum + item.subtotal), 0);
   document.getElementById('totalAmount').value = formatMoney(total);
-  
+
   // Set paid amount to total by default if it's 0
   const paidInput = document.getElementById('paidAmount');
   if (parseFloat(paidInput.value) === 0) {
     paidInput.value = formatMoney(total);
   }
-  
+
   calculateBalance();
 }
 
@@ -358,10 +358,10 @@ function calculateBalance() {
   const paid = parseFloat(document.getElementById('paidAmount').value) || 0;
   // Use money rounding (Issue 2)
   const balanceChange = roundMoney(paid - total);
-  
+
   const balanceInput = document.getElementById('balanceChange');
   const absBalance = Math.abs(balanceChange);
-  
+
   if (balanceChange < 0) {
     balanceInput.value = `-Rs.${absBalance.toFixed(2)} (Outstanding)`;
     balanceInput.style.color = '#d32f2f';
@@ -379,7 +379,7 @@ async function saveTransaction() {
   // Loading state (Issue 16)
   const saveBtn = document.querySelector('.btn-primary');
   setButtonLoading(saveBtn, true);
-  
+
   try {
     const customerId = parseInt(document.getElementById('customerId').value);
     const totalAmount = parseFloat(document.getElementById('totalAmount').value);
@@ -404,53 +404,53 @@ async function saveTransaction() {
       return;
     }
 
-  // Confirm if partially paid or unpaid
-  if (paidAmount < totalAmount) {
-    const confirmSave = confirm(
-      `Outstanding amount: Rs.${(totalAmount - paidAmount).toFixed(2)}\n\nThis will be added to the customer's balance. Continue?`
-    );
-    if (!confirmSave) return;
-  }
+    // Confirm if partially paid or unpaid
+    if (paidAmount < totalAmount) {
+      const confirmSave = confirm(
+        `Outstanding amount: Rs.${(totalAmount - paidAmount).toFixed(2)}\n\nThis will be added to the customer's balance. Continue?`
+      );
+      if (!confirmSave) return;
+    }
 
-  // Calculate balance change and payment status (Issue 2 - money rounding)
-  const balanceChange = roundMoney(paidAmount - totalAmount);
-  const currentBalance = currentCustomer ? parseFloat(currentCustomer.balance) : 0;
-  const newBalance = roundMoney(currentBalance + balanceChange);
+    // Calculate balance change and payment status (Issue 2 - money rounding)
+    const balanceChange = roundMoney(paidAmount - totalAmount);
+    const currentBalance = currentCustomer ? parseFloat(currentCustomer.balance) : 0;
+    const newBalance = roundMoney(currentBalance + balanceChange);
 
-  let paymentStatus;
-  if (paidAmount >= totalAmount) {
-    paymentStatus = 'paid';
-  } else if (paidAmount > 0) {
-    paymentStatus = 'partial';
-  } else {
-    paymentStatus = 'unpaid';
-  }
+    let paymentStatus;
+    if (paidAmount >= totalAmount) {
+      paymentStatus = 'paid';
+    } else if (paidAmount > 0) {
+      paymentStatus = 'partial';
+    } else {
+      paymentStatus = 'unpaid';
+    }
 
-  // Get current date and time using local timezone (Issue 15)
-  const transactionDate = getCurrentDate();
-  const transactionTime = getCurrentTime();
+    // Get current date and time using local timezone (Issue 15)
+    const transactionDate = getCurrentDate();
+    const transactionTime = getCurrentTime();
 
-  const transaction = {
-    customer_id: customerId,
-    transaction_date: transactionDate,
-    transaction_time: transactionTime,
-    total_amount: totalAmount,
-    paid_amount: paidAmount,
-    balance_change: balanceChange,
-    balance_after: newBalance,
-    payment_status: paymentStatus,
-    notes: notes || null,
-    items: billItems
-  };
+    const transaction = {
+      customer_id: customerId,
+      transaction_date: transactionDate,
+      transaction_time: transactionTime,
+      total_amount: totalAmount,
+      paid_amount: paidAmount,
+      balance_change: balanceChange,
+      balance_after: newBalance,
+      payment_status: paymentStatus,
+      notes: notes || null,
+      items: billItems
+    };
 
     const transactionId = await window.electronAPI.addTransaction(transaction);
     showAlert('Transaction saved successfully!', 'success');
-    
+
     // Show bill preview
     setTimeout(() => {
       viewTransaction(transactionId);
     }, 500);
-    
+
     // Clear form and reload
     clearForm();
     await loadCustomers(); // Reload to get updated balances
@@ -483,7 +483,7 @@ function clearForm() {
   document.getElementById('paidAmount').value = '0';
   document.getElementById('balanceChange').value = '0.00';
   document.getElementById('notes').value = '';
-  
+
   billItems = [];
   currentCustomer = null;
   renderBillItems();
@@ -493,7 +493,7 @@ function clearForm() {
 function toggleTransactionForm() {
   const form = document.getElementById('transactionForm');
   const icon = document.getElementById('toggleIcon');
-  
+
   if (form.style.display === 'none') {
     form.style.display = 'block';
     icon.textContent = '▼';
@@ -507,14 +507,14 @@ function toggleTransactionForm() {
 async function loadTransactions(options = {}) {
   try {
     const offset = (currentTransPage - 1) * transPageSize;
-    const result = await window.electronAPI.getTransactions({ 
+    const result = await window.electronAPI.getTransactions({
       limit: transPageSize,
       offset: offset,
       customerName: currentFilters.customerName || null,
       paymentStatus: currentFilters.paymentStatus || null,
       ...options
     });
-    
+
     // Handle paginated response
     let transactions;
     if (result.data) {
@@ -526,9 +526,9 @@ async function loadTransactions(options = {}) {
       totalTransactions = result.length;
       totalTransPages = 1;
     }
-    
+
     const tbody = document.getElementById('transactionsTable');
-    
+
     if (transactions.length === 0) {
       tbody.innerHTML = '<tr><td colspan="8" class="no-data">No transactions found</td></tr>';
       updateTransPaginationUI();
@@ -552,7 +552,7 @@ async function loadTransactions(options = {}) {
         </tr>
       `;
     }).join('');
-    
+
     updateTransPaginationUI();
   } catch (error) {
     console.error('Error loading transactions:', error);
@@ -565,7 +565,7 @@ function updateTransPaginationUI() {
   const prevBtn = document.getElementById('prevTransBtn');
   const nextBtn = document.getElementById('nextTransBtn');
   const pageInfo = document.getElementById('transPageInfo');
-  
+
   if (prevBtn && nextBtn && pageInfo) {
     prevBtn.disabled = currentTransPage === 1;
     nextBtn.disabled = currentTransPage >= totalTransPages;
@@ -625,7 +625,7 @@ async function viewTransaction(id) {
 
     const date = new Date(txn.transaction_date);
     const billContent = document.getElementById('billContent');
-    
+
     billContent.innerHTML = `
       <div style="font-family: monospace; padding: 20px; background: white;">
         <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px;">
@@ -705,17 +705,17 @@ async function editTransaction(id) {
       showAlert('Transaction not found', 'error');
       return;
     }
-    
+
     editingTransactionId = id;
     editingTransactionData = txn;
-    
+
     // Populate modal
     document.getElementById('editTxnId').textContent = txn.id;
     document.getElementById('editCustomerName').value = txn.customer_name;
     document.getElementById('editTotalAmount').value = formatMoney(txn.total_amount);
     document.getElementById('editPaidAmount').value = txn.paid_amount.toFixed(2);
     document.getElementById('editNotes').value = txn.notes || '';
-    
+
     // Show modal
     document.getElementById('editTransactionModal').classList.add('active');
   } catch (error) {
@@ -733,19 +733,19 @@ function closeEditTransactionModal() {
 async function saveEditedTransaction() {
   const saveBtn = event.target;
   setButtonLoading(saveBtn, true);
-  
+
   try {
     const newPaidAmount = parseFloat(document.getElementById('editPaidAmount').value) || 0;
     const newNotes = document.getElementById('editNotes').value.trim();
     const totalAmount = editingTransactionData.total_amount;
-    
+
     // Validate paid amount
     const paidValidation = Validators.paidAmount(newPaidAmount, totalAmount);
     if (!paidValidation.valid) {
       showEditAlert(paidValidation.error, 'warning');
       return;
     }
-    
+
     // Confirm if making major changes
     if (Math.abs(newPaidAmount - editingTransactionData.paid_amount) > totalAmount * 0.5) {
       const confirm = window.confirm(
@@ -753,16 +753,16 @@ async function saveEditedTransaction() {
       );
       if (!confirm) return;
     }
-    
+
     // Calculate new balance
     const balanceChange = roundMoney(newPaidAmount - totalAmount);
     const oldBalanceChange = editingTransactionData.balance_change;
     const balanceDifference = roundMoney(balanceChange - oldBalanceChange);
-    
+
     // Get customer current balance and calculate new balance
     const customer = await window.electronAPI.getCustomerById(editingTransactionData.customer_id);
     const newCustomerBalance = roundMoney(customer.balance + balanceDifference);
-    
+
     // Determine payment status
     let paymentStatus;
     if (newPaidAmount >= totalAmount) {
@@ -772,7 +772,7 @@ async function saveEditedTransaction() {
     } else {
       paymentStatus = 'unpaid';
     }
-    
+
     // Update transaction
     const updates = {
       customer_id: editingTransactionData.customer_id,
@@ -786,13 +786,13 @@ async function saveEditedTransaction() {
       notes: newNotes || null,
       items: editingTransactionData.items
     };
-    
+
     await window.electronAPI.updateTransaction(editingTransactionId, updates);
-    
+
     showAlert('Transaction updated successfully!', 'success');
     closeEditTransactionModal();
     await loadTransactions();
-    
+
   } catch (error) {
     let errorMessage = 'Failed to update transaction';
     if (error && error.message) {
@@ -809,10 +809,10 @@ function showEditAlert(message, type = 'info') {
   const alert = document.createElement('div');
   alert.className = `alert alert-${type}`;
   alert.textContent = message;
-  
+
   alertContainer.innerHTML = ''; // Clear previous alerts
   alertContainer.appendChild(alert);
-  
+
   setTimeout(() => {
     alert.remove();
   }, 5000);
@@ -822,12 +822,12 @@ function showEditAlert(message, type = 'info') {
 function printBill() {
   const billContent = document.getElementById('billContent').innerHTML;
   const printWindow = window.open('', '', 'height=600,width=800');
-  
+
   printWindow.document.write('<html><head><title>Print Bill</title>');
   printWindow.document.write('</head><body>');
   printWindow.document.write(billContent);
   printWindow.document.write('</body></html>');
-  
+
   printWindow.document.close();
   printWindow.print();
 }
@@ -838,19 +838,19 @@ function showAlert(message, type = 'info') {
   const alert = document.createElement('div');
   alert.className = `alert alert-${type}`;
   alert.textContent = message;
-  
+
   alertContainer.appendChild(alert);
-  
+
   setTimeout(() => {
     alert.remove();
   }, 5000);
 }
 
 // Close modal when clicking outside
-window.onclick = function(event) {
+window.onclick = function (event) {
   const viewModal = document.getElementById('viewBillModal');
   const editModal = document.getElementById('editTransactionModal');
-  
+
   if (event.target === viewModal) {
     closeViewBillModal();
   }
@@ -891,13 +891,13 @@ setTimeout(() => {
 // Switch between customer and farmer transaction types
 function switchTransactionType(type) {
   currentTransactionType = type;
-  
+
   // Update tab styling
   const customerTab = document.getElementById('customerTab');
   const farmerTab = document.getElementById('farmerTab');
   const customerSection = document.getElementById('transactionForm').parentElement;
   const farmerSection = document.getElementById('farmerTransactionSection');
-  
+
   if (type === 'customer') {
     customerTab.classList.add('active');
     farmerTab.classList.remove('active');
@@ -923,9 +923,9 @@ function switchTransactionType(type) {
 function loadFarmerFishCategories() {
   const select = document.getElementById('farmerFishSelect');
   if (!select) return;
-  
+
   select.innerHTML = '<option value="">-- Select Existing Fish --</option>';
-  
+
   fishCategories.forEach(fish => {
     const option = document.createElement('option');
     option.value = fish.id;
@@ -939,25 +939,25 @@ function loadFarmerFishCategories() {
 function setupFarmerSearch() {
   const searchInput = document.getElementById('farmerSearch');
   farmerSuggestionsDiv = document.getElementById('farmerSuggestions');
-  
+
   if (!searchInput || !farmerSuggestionsDiv) return;
-  
+
   searchInput.addEventListener('input', (e) => {
     clearTimeout(farmerSearchTimeout);
     const query = e.target.value.trim();
-    
+
     if (!query) {
       farmerSuggestionsDiv.style.display = 'none';
       clearSelectedFarmer();
       return;
     }
-    
+
     // Debounce
     farmerSearchTimeout = setTimeout(() => {
       searchFarmersLocal(query);
     }, 300);
   });
-  
+
   // Hide suggestions when clicking outside (use capture phase to avoid conflicts)
   document.addEventListener('click', (e) => {
     if (!searchInput.contains(e.target) && !farmerSuggestionsDiv.contains(e.target)) {
@@ -969,12 +969,12 @@ function setupFarmerSearch() {
 // Search farmers locally
 function searchFarmersLocal(query) {
   const queryLower = query.toLowerCase();
-  const results = farmers.filter(f => 
-    f.name.toLowerCase().includes(queryLower) || 
+  const results = farmers.filter(f =>
+    f.name.toLowerCase().includes(queryLower) ||
     (f.phone && f.phone.includes(query)) ||
     f.id.toString() === query
   );
-  
+
   displayFarmerSuggestions(results, query);
 }
 
@@ -985,12 +985,12 @@ function displayFarmerSuggestions(results, query) {
     farmerSuggestionsDiv.style.display = 'block';
     return;
   }
-  
+
   farmerSuggestionsDiv.innerHTML = results.slice(0, 5).map(farmer => {
     const balance = parseFloat(farmer.balance);
     let balanceColor = '#666';
     let balanceText = 'Balanced';
-    
+
     if (balance < 0) {
       balanceColor = '#d32f2f';
       balanceText = `We Owe: Rs.${Math.abs(balance).toFixed(2)}`;
@@ -1000,7 +1000,7 @@ function displayFarmerSuggestions(results, query) {
     } else {
       balanceText = 'Balance: Rs.0.00';
     }
-    
+
     return `
       <div class="suggestion-item" onclick="selectFarmerFromSuggestion(${farmer.id}, '${farmer.name.replace(/'/g, "\\'")}')">
         <div class="suggestion-name">${farmer.name}</div>
@@ -1011,7 +1011,7 @@ function displayFarmerSuggestions(results, query) {
       </div>
     `;
   }).join('');
-  
+
   farmerSuggestionsDiv.style.display = 'block';
 }
 
@@ -1020,7 +1020,7 @@ function selectFarmerFromSuggestion(farmerId, farmerName) {
   document.getElementById('selectedFarmerId').value = farmerId;
   document.getElementById('farmerSearch').value = farmerName;
   farmerSuggestionsDiv.style.display = 'none';
-  
+
   currentFarmer = farmers.find(f => f.id === farmerId);
   updateFarmerInfo();
 }
@@ -1041,7 +1041,7 @@ function clearSelectedFarmer() {
 // Update farmer info when selected
 function updateFarmerInfo() {
   const balanceDiv = document.getElementById('farmerBalance');
-  
+
   if (!currentFarmer) {
     balanceDiv.innerHTML = 'Search and select a farmer';
     balanceDiv.className = '';
@@ -1070,9 +1070,9 @@ function updateFarmerInfo() {
 function toggleNewFishInput() {
   const newFishSection = document.getElementById('newFishInputSection');
   const fishSelect = document.getElementById('farmerFishSelect');
-  
+
   isNewFish = !isNewFish;
-  
+
   if (isNewFish) {
     newFishSection.style.display = 'block';
     fishSelect.disabled = true;
@@ -1085,7 +1085,7 @@ function toggleNewFishInput() {
     document.getElementById('newFishName').value = '';
     document.getElementById('farmerPricePerMaund').readOnly = false;
   }
-  
+
   calculateFarmerTotals();
 }
 
@@ -1093,7 +1093,7 @@ function toggleNewFishInput() {
 function updateFarmerFishPrice() {
   const select = document.getElementById('farmerFishSelect');
   const priceInput = document.getElementById('farmerPricePerMaund');
-  
+
   if (select.value) {
     const selectedOption = select.options[select.selectedIndex];
     // For farmer transactions, we start fresh with farmer's price
@@ -1104,7 +1104,7 @@ function updateFarmerFishPrice() {
     priceInput.value = '';
     priceInput.placeholder = '';
   }
-  
+
   calculateFarmerTotals();
 }
 
@@ -1112,12 +1112,12 @@ function updateFarmerFishPrice() {
 function calculateFarmerTotalWeight() {
   const maunds = parseFloat(document.getElementById('farmerWeightMaund').value) || 0;
   const kg = parseFloat(document.getElementById('farmerWeightKg').value) || 0;
-  
+
   const totalKg = maundAndKgToKg(maunds, kg);
-  
+
   const displayText = formatWeight(totalKg);
   document.getElementById('farmerTotalWeight').value = displayText;
-  
+
   calculateFarmerTotals();
 }
 
@@ -1126,56 +1126,89 @@ function calculateFarmerTotals() {
   const maunds = parseFloat(document.getElementById('farmerWeightMaund').value) || 0;
   const kg = parseFloat(document.getElementById('farmerWeightKg').value) || 0;
   const totalKg = maundAndKgToKg(maunds, kg);
-  
+
   const farmerPricePerMaund = parseFloat(document.getElementById('farmerPricePerMaund').value) || 0;
   const markupPercent = parseFloat(document.getElementById('customerMarkup').value) || 0;
-  
+
   // Calculate final price per maund (with markup)
   const markupAmount = (farmerPricePerMaund * markupPercent) / 100;
   const finalPrice = farmerPricePerMaund + markupAmount;
   document.getElementById('finalPricePerMaund').value = finalPrice > 0 ? `Rs.${finalPrice.toFixed(2)}` : 'Rs.0.00';
-  
+
   // Calculate total fish value (what farmer gets for the fish)
   const totalFishValue = roundMoney((totalKg / KG_PER_MAUND) * farmerPricePerMaund);
   document.getElementById('totalFishValue').value = formatMoney(totalFishValue);
-  
+
   // Calculate commission on original farmer price
   const commissionPercent = parseFloat(document.getElementById('commissionPercent').value) || 0;
   const commissionAmount = roundMoney((totalFishValue * commissionPercent) / 100);
   document.getElementById('commissionAmount').value = formatMoney(commissionAmount);
-  
+
   // Get other charges
   const munshiNama = parseFloat(document.getElementById('munshiNama').value) || 0;
   const barafPrice = parseFloat(document.getElementById('barafPrice').value) || 0;
   const labourCharges = parseFloat(document.getElementById('labourCharges').value) || 0;
   const extraCharges = parseFloat(document.getElementById('extraCharges').value) || 0;
-  
+
   // Calculate net to farmer
   const netToFarmer = roundMoney(totalFishValue - commissionAmount - munshiNama - barafPrice - labourCharges - extraCharges);
   document.getElementById('netToFarmer').textContent = formatMoney(netToFarmer);
-  
+
+  // Update bill preview section
+  updateBillPreview(totalFishValue, commissionPercent, commissionAmount, munshiNama, barafPrice, labourCharges, extraCharges, netToFarmer);
+
   // Set paid amount to net amount by default if it's 0
   const paidInput = document.getElementById('farmerPaidAmount');
   if (parseFloat(paidInput.value) === 0 && netToFarmer > 0) {
     paidInput.value = netToFarmer.toFixed(2);
   }
-  
+
   // Calculate balance
   calculateFarmerBalance();
+}
+
+// Update bill preview section
+function updateBillPreview(totalFishValue, commissionPercent, commissionAmount, munshiNama, barafPrice, labourCharges, extraCharges, netToFarmer) {
+  // Update total fish value
+  document.getElementById('billTotalFishValue').textContent = formatMoney(totalFishValue);
+
+  // Update commission
+  document.getElementById('billCommissionPercent').textContent = commissionPercent.toFixed(0);
+  document.getElementById('billCommissionAmount').textContent = formatMoney(commissionAmount);
+  document.getElementById('billCommissionRow').style.display = commissionAmount > 0 ? 'table-row' : 'none';
+
+  // Update munshi nama
+  document.getElementById('billMunshiNama').textContent = formatMoney(munshiNama);
+  document.getElementById('billMunshiRow').style.display = munshiNama > 0 ? 'table-row' : 'none';
+
+  // Update baraf price
+  document.getElementById('billBarafPrice').textContent = formatMoney(barafPrice);
+  document.getElementById('billBarafRow').style.display = barafPrice > 0 ? 'table-row' : 'none';
+
+  // Update labour charges
+  document.getElementById('billLabourCharges').textContent = formatMoney(labourCharges);
+  document.getElementById('billLabourRow').style.display = labourCharges > 0 ? 'table-row' : 'none';
+
+  // Update extra charges
+  document.getElementById('billExtraCharges').textContent = formatMoney(extraCharges);
+  document.getElementById('billExtraRow').style.display = extraCharges > 0 ? 'table-row' : 'none';
+
+  // Update net to farmer
+  document.getElementById('billNetToFarmer').textContent = formatMoney(netToFarmer);
 }
 
 // Calculate farmer balance change based on paid amount
 function calculateFarmerBalance() {
   const netToFarmer = parseFloat(document.getElementById('netToFarmer').textContent.replace(/,/g, '')) || 0;
   const paidAmount = parseFloat(document.getElementById('farmerPaidAmount').value) || 0;
-  
+
   // Balance change = what we owe - what we paid
   // Negative balance = we owe the farmer
   const balanceChange = -(netToFarmer - paidAmount);
-  
+
   const balanceInput = document.getElementById('farmerBalanceChange');
   const absBalance = Math.abs(balanceChange);
-  
+
   if (balanceChange < 0) {
     // Negative = we owe more to the farmer
     balanceInput.value = `-Rs.${absBalance.toFixed(2)} (We Owe)`;
@@ -1194,7 +1227,7 @@ function calculateFarmerBalance() {
 function toggleFarmerForm() {
   const form = document.getElementById('farmerTransactionForm');
   const icon = document.getElementById('toggleFarmerIcon');
-  
+
   if (form.style.display === 'none') {
     form.style.display = 'block';
     icon.textContent = '▼';
@@ -1208,7 +1241,7 @@ function toggleFarmerForm() {
 async function saveFarmerTransaction() {
   const saveBtn = event ? event.target : document.querySelector('#farmerTransactionSection .btn-primary');
   setButtonLoading(saveBtn, true);
-  
+
   try {
     // Get farmer ID
     const farmerId = parseInt(document.getElementById('selectedFarmerId').value);
@@ -1216,11 +1249,11 @@ async function saveFarmerTransaction() {
       showAlert('Please select a farmer', 'warning');
       return;
     }
-    
+
     // Get fish details
     let fishCategoryId;
     let fishName;
-    
+
     if (isNewFish) {
       fishName = document.getElementById('newFishName').value.trim();
       if (!fishName) {
@@ -1236,63 +1269,63 @@ async function saveFarmerTransaction() {
       }
       fishName = fishSelect.options[fishSelect.selectedIndex].text;
     }
-    
+
     // Get weight
     const weightMaund = parseInt(document.getElementById('farmerWeightMaund').value) || 0;
     const weightKg = parseFloat(document.getElementById('farmerWeightKg').value) || 0;
     const totalWeightKg = maundAndKgToKg(weightMaund, weightKg);
-    
+
     if (totalWeightKg <= 0) {
       showAlert('Please enter a valid weight', 'warning');
       return;
     }
-    
+
     // Get prices
     const farmerPricePerMaund = parseFloat(document.getElementById('farmerPricePerMaund').value);
     if (!farmerPricePerMaund || farmerPricePerMaund <= 0) {
       showAlert('Please enter farmer price per maund', 'warning');
       return;
     }
-    
+
     const markupPercent = parseFloat(document.getElementById('customerMarkup').value);
-    if (!markupPercent || markupPercent < 1 || markupPercent > 100) {
-      showAlert('Please enter customer markup (1-100%)', 'warning');
+    if (isNaN(markupPercent) || markupPercent < 0 || markupPercent > 100) {
+      showAlert('Please enter customer markup (0-100%)', 'warning');
       return;
     }
-    
+
     const finalPricePerMaund = roundMoney(farmerPricePerMaund + (farmerPricePerMaund * markupPercent / 100));
-    
+
     // Calculate total fish value
     const totalFishValue = roundMoney((totalWeightKg / KG_PER_MAUND) * farmerPricePerMaund);
-    
+
     // Get commission
     const commissionPercent = parseFloat(document.getElementById('commissionPercent').value);
-    if (!commissionPercent || commissionPercent < 1 || commissionPercent > 100) {
-      showAlert('Please enter commission percentage (1-100%)', 'warning');
+    if (isNaN(commissionPercent) || commissionPercent < 0 || commissionPercent > 100) {
+      showAlert('Please enter commission percentage (0-100%)', 'warning');
       return;
     }
-    
+
     const commissionAmount = roundMoney((totalFishValue * commissionPercent) / 100);
-    
+
     // Get other charges
     const munshiNama = parseFloat(document.getElementById('munshiNama').value) || 0;
     const barafPrice = parseFloat(document.getElementById('barafPrice').value) || 0;
     const labourCharges = parseFloat(document.getElementById('labourCharges').value) || 0;
     const extraCharges = parseFloat(document.getElementById('extraCharges').value) || 0;
     const notes = document.getElementById('farmerNotes').value.trim();
-    
+
     // Calculate net to farmer
     const totalAmount = roundMoney(totalFishValue - commissionAmount - munshiNama - barafPrice - labourCharges - extraCharges);
-    
+
     // Get paid amount
     const paidAmount = parseFloat(document.getElementById('farmerPaidAmount').value) || 0;
-    
+
     // Validate paid amount
     if (paidAmount < 0) {
       showAlert('Paid amount cannot be negative', 'warning');
       return;
     }
-    
+
     // Confirm if partially paid or unpaid
     if (paidAmount < totalAmount) {
       const outstandingAmount = totalAmount - paidAmount;
@@ -1301,14 +1334,14 @@ async function saveFarmerTransaction() {
       );
       if (!confirmSave) return;
     }
-    
+
     // Calculate balance change
     // Balance change = what we owe - what we paid
     // Negative balance = we owe the farmer
     const currentBalance = currentFarmer ? parseFloat(currentFarmer.balance) : 0;
     const balanceChange = -(totalAmount - paidAmount); // Negative = we owe more
     const balanceAfter = roundMoney(currentBalance + balanceChange);
-    
+
     // If new fish, create it first
     if (isNewFish) {
       try {
@@ -1318,11 +1351,11 @@ async function saveFarmerTransaction() {
           active: 1
         });
         fishCategoryId = newFishId;
-        
+
         // Reload fish categories
         await loadFishCategories();
         loadFarmerFishCategories();
-        
+
         showAlert(`New fish "${fishName}" added to categories!`, 'success');
       } catch (error) {
         showAlert('Failed to add new fish: ' + error.message, 'error');
@@ -1337,7 +1370,7 @@ async function saveFarmerTransaction() {
             name: fishCategory.name,
             price_per_maund: finalPricePerMaund
           });
-          
+
           // Reload fish categories
           await loadFishCategories();
           loadFarmerFishCategories();
@@ -1347,11 +1380,11 @@ async function saveFarmerTransaction() {
         // Continue anyway, don't block the transaction
       }
     }
-    
+
     // Get current date and time
     const transactionDate = getCurrentDate();
     const transactionTime = getCurrentTime();
-    
+
     // Create farmer transaction
     const farmerTransaction = {
       farmer_id: farmerId,
@@ -1378,19 +1411,19 @@ async function saveFarmerTransaction() {
       balance_after: balanceAfter,
       notes: notes || null
     };
-    
+
     const transactionId = await window.electronAPI.addFarmerTransaction(farmerTransaction);
     showAlert('Farmer transaction saved successfully!', 'success');
-    
+
     // Show receipt
     setTimeout(() => {
       viewFarmerTransaction(transactionId);
     }, 500);
-    
+
     // Clear form and reload
     clearFarmerForm();
     await loadFarmersData();
-    
+
   } catch (error) {
     let errorMessage = 'Failed to save farmer transaction';
     if (error && error.message) {
@@ -1413,7 +1446,7 @@ async function viewFarmerTransaction(id) {
 
     const date = new Date(txn.transaction_date);
     const billContent = document.getElementById('billContent');
-    
+
     billContent.innerHTML = `
       <div style="font-family: monospace; padding: 20px; background: white;">
         <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px;">
@@ -1506,13 +1539,13 @@ function clearFarmerForm() {
   document.getElementById('farmerSearch').value = '';
   document.getElementById('farmerBalance').innerHTML = 'Search and select a farmer';
   document.getElementById('farmerBalance').className = '';
-  
+
   document.getElementById('farmerFishSelect').value = '';
   document.getElementById('newFishName').value = '';
   document.getElementById('newFishInputSection').style.display = 'none';
   document.getElementById('farmerFishSelect').disabled = false;
   isNewFish = false;
-  
+
   document.getElementById('farmerWeightMaund').value = '0';
   document.getElementById('farmerWeightKg').value = '0';
   document.getElementById('farmerTotalWeight').value = '0 Maund 0 KG';
@@ -1520,7 +1553,7 @@ function clearFarmerForm() {
   document.getElementById('customerMarkup').value = '';
   document.getElementById('finalPricePerMaund').value = '';
   document.getElementById('totalFishValue').value = '0.00';
-  
+
   document.getElementById('commissionPercent').value = '';
   document.getElementById('commissionAmount').value = '';
   document.getElementById('munshiNama').value = '0';
@@ -1528,11 +1561,11 @@ function clearFarmerForm() {
   document.getElementById('labourCharges').value = '0';
   document.getElementById('extraCharges').value = '0';
   document.getElementById('farmerNotes').value = '';
-  
+
   document.getElementById('netToFarmer').textContent = '0.00';
   document.getElementById('farmerPaidAmount').value = '0';
   document.getElementById('farmerBalanceChange').value = '';
-  
+
   currentFarmer = null;
 }
 
