@@ -9,7 +9,7 @@ class FishMarketDB {
     // This ensures a writable location even when app is packaged
     const isDev = !app.isPackaged;
     let dbDir;
-    
+
     if (isDev) {
       // Development: use local database folder
       dbDir = path.join(__dirname, '../../database');
@@ -17,33 +17,33 @@ class FishMarketDB {
       // Production: use userData directory (writable location)
       dbDir = path.join(app.getPath('userData'), 'database');
     }
-    
+
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
     }
 
     const dbPath = path.join(dbDir, 'fishmarket.db');
     this.isDev = isDev;
-    
+
     // Only log in development
     if (isDev) {
       console.log('Database path:', dbPath);
     }
-    
+
     this.db = new Database(dbPath);
-    
+
     // Enable foreign keys
     this.db.pragma('foreign_keys = ON');
-    
+
     // Enable WAL mode for better concurrency (Issue 13)
     this.db.pragma('journal_mode = WAL');
-    
+
     // Set busy timeout for concurrent access
     this.db.pragma('busy_timeout = 5000');
-    
+
     // Initialize tables
     this.initializeTables();
-    
+
     // Setup auto-backup (Issue 26)
     this.setupAutoBackup();
   }
@@ -94,7 +94,7 @@ class FishMarketDB {
         FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
       )
     `);
-    
+
     // Add status column if it doesn't exist (for Issue 6 - edit transactions)
     try {
       this.db.exec(`ALTER TABLE transactions ADD COLUMN status TEXT DEFAULT 'completed'`);
@@ -175,7 +175,7 @@ class FishMarketDB {
         FOREIGN KEY (fish_category_id) REFERENCES fish_categories(id)
       )
     `);
-    
+
     // Add paid_amount column if it doesn't exist
     try {
       this.db.exec(`ALTER TABLE farmer_transactions ADD COLUMN paid_amount REAL DEFAULT 0`);
@@ -229,6 +229,25 @@ class FishMarketDB {
       ON farmer_transactions(transaction_date);
     `);
 
+    // Add initial_balance column to customers table for persisting initial balance
+    try {
+      this.db.exec(`ALTER TABLE customers ADD COLUMN initial_balance REAL DEFAULT 0`);
+      // Migrate existing balance values to initial_balance for existing customers
+      this.db.exec(`UPDATE customers SET initial_balance = balance WHERE initial_balance = 0 AND balance != 0`);
+      console.log('Added initial_balance column to customers table');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
+    // Add initial_balance column to farmers table for consistency
+    try {
+      this.db.exec(`ALTER TABLE farmers ADD COLUMN initial_balance REAL DEFAULT 0`);
+      this.db.exec(`UPDATE farmers SET initial_balance = balance WHERE initial_balance = 0 AND balance != 0`);
+      console.log('Added initial_balance column to farmers table');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
     console.log('Database tables initialized successfully');
   }
 
@@ -239,10 +258,10 @@ class FishMarketDB {
       const tableInfo = this.db.pragma('table_info(fish_categories)');
       const hasOldColumn = tableInfo.some(col => col.name === 'price_per_kg');
       const hasNewColumn = tableInfo.some(col => col.name === 'price_per_maund');
-      
+
       if (hasOldColumn && !hasNewColumn) {
         console.log('Migrating fish_categories from price_per_kg to price_per_maund...');
-        
+
         // Convert price_per_kg to price_per_maund (multiply by 40)
         this.db.exec(`
           ALTER TABLE fish_categories RENAME COLUMN price_per_kg TO price_per_maund;
@@ -250,25 +269,25 @@ class FishMarketDB {
         this.db.exec(`
           UPDATE fish_categories SET price_per_maund = price_per_maund * 40;
         `);
-        
+
         console.log('Fish categories migration completed');
       }
-      
+
       // Check transaction_items table
       const itemsTableInfo = this.db.pragma('table_info(transaction_items)');
       const hasOldItemColumn = itemsTableInfo.some(col => col.name === 'price_per_kg');
       const hasNewItemColumn = itemsTableInfo.some(col => col.name === 'price_per_maund');
-      
+
       if (hasOldItemColumn && !hasNewItemColumn) {
         console.log('Migrating transaction_items from price_per_kg to price_per_maund...');
-        
+
         this.db.exec(`
           ALTER TABLE transaction_items RENAME COLUMN price_per_kg TO price_per_maund;
         `);
         this.db.exec(`
           UPDATE transaction_items SET price_per_maund = price_per_maund * 40;
         `);
-        
+
         console.log('Transaction items migration completed');
       }
     } catch (error) {
@@ -279,29 +298,29 @@ class FishMarketDB {
   // Customer operations
   getAllCustomers(options = {}) {
     const { limit, offset, sortBy = 'name', sortOrder = 'ASC' } = options;
-    
+
     // Build query with pagination (Issue 9)
     let query = 'SELECT * FROM customers ORDER BY ' + sortBy + ' ' + sortOrder;
     let params = [];
-    
+
     if (limit) {
       query += ' LIMIT ? OFFSET ?';
       params = [limit, offset || 0];
     }
-    
+
     const stmt = this.db.prepare(query);
     const customers = params.length > 0 ? stmt.all(...params) : stmt.all();
-    
+
     // Calculate balance dynamically for each customer (Issue 3 & 7)
     customers.forEach(customer => {
       customer.balance = this.getCustomerBalance(customer.id);
     });
-    
+
     // Get total count if pagination is used
     if (limit) {
       const countStmt = this.db.prepare('SELECT COUNT(*) as count FROM customers');
       const total = countStmt.get().count;
-      
+
       return {
         data: customers,
         total,
@@ -310,31 +329,41 @@ class FishMarketDB {
         hasMore: (offset || 0) + limit < total
       };
     }
-    
+
     return customers;
   }
 
   getCustomerById(id) {
     const stmt = this.db.prepare('SELECT * FROM customers WHERE id = ?');
     const customer = stmt.get(id);
-    
+
     // Calculate balance dynamically from transactions (Issue 3 & 7)
     if (customer) {
       customer.balance = this.getCustomerBalance(customer.id);
     }
-    
+
     return customer;
   }
 
-  // Calculate customer balance dynamically from transactions (Issue 3 & 7)
+  // Calculate customer balance dynamically from initial_balance + transactions (Issue 3 & 7)
   getCustomerBalance(customerId) {
-    const stmt = this.db.prepare(`
-      SELECT COALESCE(SUM(balance_change), 0) as balance
+    // Get initial balance from customers table
+    const initialStmt = this.db.prepare(`
+      SELECT COALESCE(initial_balance, 0) as initial_balance FROM customers WHERE id = ?
+    `);
+    const initialResult = initialStmt.get(customerId);
+    const initialBalance = initialResult ? initialResult.initial_balance : 0;
+
+    // Get sum of all transaction balance changes
+    const txnStmt = this.db.prepare(`
+      SELECT COALESCE(SUM(balance_change), 0) as txn_balance
       FROM transactions
       WHERE customer_id = ? AND status != 'voided'
     `);
-    const result = stmt.get(customerId);
-    return result ? result.balance : 0;
+    const txnResult = txnStmt.get(customerId);
+    const txnBalance = txnResult ? txnResult.txn_balance : 0;
+
+    return initialBalance + txnBalance;
   }
 
   addCustomer(customer) {
@@ -344,20 +373,21 @@ class FishMarketDB {
       WHERE LOWER(name) = LOWER(?) OR (phone IS NOT NULL AND phone = ?)
     `);
     const duplicate = duplicateStmt.get(customer.name, customer.phone || null);
-    
+
     if (duplicate) {
       throw new Error(`Customer "${duplicate.name}" already exists`);
     }
-    
+
     const stmt = this.db.prepare(`
-      INSERT INTO customers (name, phone, address, balance)
-      VALUES (@name, @phone, @address, @balance)
+      INSERT INTO customers (name, phone, address, balance, initial_balance)
+      VALUES (@name, @phone, @address, @balance, @initial_balance)
     `);
     const info = stmt.run({
       name: customer.name,
       phone: customer.phone || null,
       address: customer.address || null,
-      balance: customer.balance || 0
+      balance: customer.balance || 0,
+      initial_balance: customer.balance || 0  // Persist initial balance
     });
     return info.lastInsertRowid;
   }
@@ -395,7 +425,7 @@ class FishMarketDB {
     if (typeof query !== 'string') {
       return [];
     }
-    
+
     const stmt = this.db.prepare(`
       SELECT * FROM customers 
       WHERE name LIKE ? OR phone LIKE ? OR id = ?
@@ -405,39 +435,39 @@ class FishMarketDB {
     const searchTerm = `%${query}%`;
     const idSearch = isNaN(query) ? -1 : parseInt(query);
     const customers = stmt.all(searchTerm, searchTerm, idSearch);
-    
+
     // Calculate balance dynamically for each customer (Issue 3 & 7)
     customers.forEach(customer => {
       customer.balance = this.getCustomerBalance(customer.id);
     });
-    
+
     return customers;
   }
 
   // Farmer operations (similar to customers)
   getAllFarmers(options = {}) {
     const { limit, offset, sortBy = 'name', sortOrder = 'ASC' } = options;
-    
+
     let query = 'SELECT * FROM farmers ORDER BY ' + sortBy + ' ' + sortOrder;
     let params = [];
-    
+
     if (limit) {
       query += ' LIMIT ? OFFSET ?';
       params = [limit, offset || 0];
     }
-    
+
     const stmt = this.db.prepare(query);
     const farmers = params.length > 0 ? stmt.all(...params) : stmt.all();
-    
+
     // Calculate balance dynamically for each farmer
     farmers.forEach(farmer => {
       farmer.balance = this.getFarmerBalance(farmer.id);
     });
-    
+
     if (limit) {
       const countStmt = this.db.prepare('SELECT COUNT(*) as count FROM farmers');
       const total = countStmt.get().count;
-      
+
       return {
         data: farmers,
         total,
@@ -446,29 +476,40 @@ class FishMarketDB {
         hasMore: (offset || 0) + limit < total
       };
     }
-    
+
     return farmers;
   }
 
   getFarmerById(id) {
     const stmt = this.db.prepare('SELECT * FROM farmers WHERE id = ?');
     const farmer = stmt.get(id);
-    
+
     if (farmer) {
       farmer.balance = this.getFarmerBalance(farmer.id);
     }
-    
+
     return farmer;
   }
 
+  // Calculate farmer balance dynamically from initial_balance + transactions
   getFarmerBalance(farmerId) {
-    const stmt = this.db.prepare(`
-      SELECT COALESCE(SUM(balance_change), 0) as balance
+    // Get initial balance from farmers table
+    const initialStmt = this.db.prepare(`
+      SELECT COALESCE(initial_balance, 0) as initial_balance FROM farmers WHERE id = ?
+    `);
+    const initialResult = initialStmt.get(farmerId);
+    const initialBalance = initialResult ? initialResult.initial_balance : 0;
+
+    // Get sum of all transaction balance changes
+    const txnStmt = this.db.prepare(`
+      SELECT COALESCE(SUM(balance_change), 0) as txn_balance
       FROM farmer_transactions
       WHERE farmer_id = ? AND status != 'voided'
     `);
-    const result = stmt.get(farmerId);
-    return result ? result.balance : 0;
+    const txnResult = txnStmt.get(farmerId);
+    const txnBalance = txnResult ? txnResult.txn_balance : 0;
+
+    return initialBalance + txnBalance;
   }
 
   addFarmer(farmer) {
@@ -478,20 +519,21 @@ class FishMarketDB {
       WHERE LOWER(name) = LOWER(?) OR (phone IS NOT NULL AND phone = ?)
     `);
     const duplicate = duplicateStmt.get(farmer.name, farmer.phone || null);
-    
+
     if (duplicate) {
       throw new Error(`Farmer "${duplicate.name}" already exists`);
     }
-    
+
     const stmt = this.db.prepare(`
-      INSERT INTO farmers (name, phone, address, balance)
-      VALUES (@name, @phone, @address, @balance)
+      INSERT INTO farmers (name, phone, address, balance, initial_balance)
+      VALUES (@name, @phone, @address, @balance, @initial_balance)
     `);
     const info = stmt.run({
       name: farmer.name,
       phone: farmer.phone || null,
       address: farmer.address || null,
-      balance: farmer.balance || 0
+      balance: farmer.balance || 0,
+      initial_balance: farmer.balance || 0  // Persist initial balance
     });
     return info.lastInsertRowid;
   }
@@ -528,7 +570,7 @@ class FishMarketDB {
     if (typeof query !== 'string') {
       return [];
     }
-    
+
     const stmt = this.db.prepare(`
       SELECT * FROM farmers 
       WHERE name LIKE ? OR phone LIKE ? OR id = ?
@@ -538,11 +580,11 @@ class FishMarketDB {
     const searchTerm = `%${query}%`;
     const idSearch = isNaN(query) ? -1 : parseInt(query);
     const farmers = stmt.all(searchTerm, searchTerm, idSearch);
-    
+
     farmers.forEach(farmer => {
       farmer.balance = this.getFarmerBalance(farmer.id);
     });
-    
+
     return farmers;
   }
 
@@ -597,6 +639,47 @@ class FishMarketDB {
     return stmt.run({ id, active: active ? 1 : 0 });
   }
 
+  // Check if fish category is referenced by any transactions
+  isFishCategoryReferenced(id) {
+    // Check transaction_items table
+    const customerTxnStmt = this.db.prepare(`
+      SELECT COUNT(*) as count FROM transaction_items WHERE fish_category_id = ?
+    `);
+    const customerTxnCount = customerTxnStmt.get(id).count;
+
+    // Check farmer_transactions table
+    const farmerTxnStmt = this.db.prepare(`
+      SELECT COUNT(*) as count FROM farmer_transactions WHERE fish_category_id = ?
+    `);
+    const farmerTxnCount = farmerTxnStmt.get(id).count;
+
+    const totalCount = customerTxnCount + farmerTxnCount;
+
+    return {
+      isReferenced: totalCount > 0,
+      customerTransactionCount: customerTxnCount,
+      farmerTransactionCount: farmerTxnCount,
+      totalCount: totalCount
+    };
+  }
+
+  // Delete fish category (only if not referenced)
+  deleteFishCategory(id) {
+    // Check for references first
+    const refs = this.isFishCategoryReferenced(id);
+
+    if (refs.isReferenced) {
+      throw new Error(
+        `Cannot delete: category is used in ${refs.totalCount} transaction(s) ` +
+        `(${refs.customerTransactionCount} customer, ${refs.farmerTransactionCount} farmer). ` +
+        `Deactivate instead to preserve history.`
+      );
+    }
+
+    const stmt = this.db.prepare('DELETE FROM fish_categories WHERE id = ?');
+    return stmt.run(id);
+  }
+
   // Transaction operations
   addTransaction(transaction) {
     const addTxn = this.db.transaction((txn) => {
@@ -611,7 +694,7 @@ class FishMarketDB {
           @total_amount, @paid_amount, @balance_change, @balance_after, @payment_status, @notes
         )
       `);
-      
+
       const info = stmt.run({
         customer_id: txn.customer_id,
         transaction_date: txn.transaction_date,
@@ -623,7 +706,7 @@ class FishMarketDB {
         payment_status: txn.payment_status,
         notes: txn.notes || null
       });
-      
+
       const transactionId = info.lastInsertRowid;
 
       // Insert transaction items
@@ -658,13 +741,13 @@ class FishMarketDB {
   }
 
   getTransactions(options = {}) {
-    const { 
-      limit = 50, 
+    const {
+      limit = 50,
       offset = 0,
       customerName = null,
       paymentStatus = null
     } = options;
-    
+
     // Build query with filters (Issue 23)
     let query = `
       SELECT t.*, c.name as customer_name 
@@ -673,13 +756,13 @@ class FishMarketDB {
       WHERE 1=1
     `;
     const params = [];
-    
+
     // Filter by customer name (Issue 23)
     if (customerName) {
       query += ' AND c.name LIKE ?';
       params.push(`%${customerName}%`);
     }
-    
+
     // Filter by payment status (Issue 23)
     if (paymentStatus) {
       if (paymentStatus === 'unpaid_partial') {
@@ -690,19 +773,19 @@ class FishMarketDB {
         params.push(paymentStatus);
       }
     }
-    
+
     // Exclude voided transactions by default
     query += ` AND (t.status IS NULL OR t.status = 'completed')`;
-    
+
     query += ' ORDER BY t.transaction_date DESC, t.transaction_time DESC';
-    
+
     // Add pagination (Issue 9)
     query += ' LIMIT ? OFFSET ?';
     params.push(limit, offset);
-    
+
     const stmt = this.db.prepare(query);
     const transactions = stmt.all(...params);
-    
+
     // Get total count for pagination
     let countQuery = `
       SELECT COUNT(*) as count
@@ -711,12 +794,12 @@ class FishMarketDB {
       WHERE 1=1
     `;
     const countParams = [];
-    
+
     if (customerName) {
       countQuery += ' AND c.name LIKE ?';
       countParams.push(`%${customerName}%`);
     }
-    
+
     if (paymentStatus) {
       if (paymentStatus === 'unpaid_partial') {
         countQuery += ' AND t.payment_status IN (?, ?)';
@@ -726,12 +809,12 @@ class FishMarketDB {
         countParams.push(paymentStatus);
       }
     }
-    
+
     countQuery += ` AND (t.status IS NULL OR t.status = 'completed')`;
-    
+
     const countStmt = this.db.prepare(countQuery);
     const total = countStmt.get(...countParams).count;
-    
+
     return {
       data: transactions,
       total,
@@ -776,7 +859,7 @@ class FishMarketDB {
     if (!original) {
       throw new Error('Transaction not found');
     }
-    
+
     const txn = this.db.transaction(() => {
       // Update transaction record
       const stmt = this.db.prepare(`
@@ -792,7 +875,7 @@ class FishMarketDB {
             notes = ?
         WHERE id = ?
       `);
-      
+
       stmt.run(
         updates.customer_id,
         updates.transaction_date,
@@ -805,13 +888,13 @@ class FishMarketDB {
         updates.notes || null,
         id
       );
-      
+
       // Update transaction items if provided
       if (updates.items && updates.items.length > 0) {
         // Delete old items
         const deleteStmt = this.db.prepare('DELETE FROM transaction_items WHERE transaction_id = ?');
         deleteStmt.run(id);
-        
+
         // Insert new items
         const itemStmt = this.db.prepare(`
           INSERT INTO transaction_items (
@@ -819,7 +902,7 @@ class FishMarketDB {
           )
           VALUES (?, ?, ?, ?, ?, ?)
         `);
-        
+
         for (const item of updates.items) {
           itemStmt.run(
             id,
@@ -831,7 +914,7 @@ class FishMarketDB {
           );
         }
       }
-      
+
       // Recalculate daily summaries (remove old, add new)
       // This is simplified - in production you'd need more complex logic
       this.updateDailySummary(
@@ -841,7 +924,7 @@ class FishMarketDB {
         updates.balance_change
       );
     });
-    
+
     return txn();
   }
 
@@ -869,7 +952,7 @@ class FishMarketDB {
           @total_amount, @paid_amount, @balance_change, @balance_after, @notes, @status
         )
       `);
-      
+
       const info = stmt.run({
         farmer_id: txn.farmer_id,
         transaction_date: txn.transaction_date,
@@ -896,7 +979,7 @@ class FishMarketDB {
         notes: txn.notes || null,
         status: txn.status || 'completed'
       });
-      
+
       const transactionId = info.lastInsertRowid;
 
       // Update farmer balance
@@ -915,12 +998,12 @@ class FishMarketDB {
   }
 
   getFarmerTransactions(options = {}) {
-    const { 
-      limit = 50, 
+    const {
+      limit = 50,
       offset = 0,
       farmerName = null
     } = options;
-    
+
     let query = `
       SELECT ft.*, f.name as farmer_name 
       FROM farmer_transactions ft
@@ -928,20 +1011,20 @@ class FishMarketDB {
       WHERE 1=1
     `;
     const params = [];
-    
+
     if (farmerName) {
       query += ' AND f.name LIKE ?';
       params.push(`%${farmerName}%`);
     }
-    
+
     query += ` AND (ft.status IS NULL OR ft.status = 'completed')`;
     query += ' ORDER BY ft.transaction_date DESC, ft.transaction_time DESC';
     query += ' LIMIT ? OFFSET ?';
     params.push(limit, offset);
-    
+
     const stmt = this.db.prepare(query);
     const transactions = stmt.all(...params);
-    
+
     // Get total count
     let countQuery = `
       SELECT COUNT(*) as count
@@ -950,17 +1033,17 @@ class FishMarketDB {
       WHERE 1=1
     `;
     const countParams = [];
-    
+
     if (farmerName) {
       countQuery += ' AND f.name LIKE ?';
       countParams.push(`%${farmerName}%`);
     }
-    
+
     countQuery += ` AND (ft.status IS NULL OR ft.status = 'completed')`;
-    
+
     const countStmt = this.db.prepare(countQuery);
     const total = countStmt.get(...countParams).count;
-    
+
     return {
       data: transactions,
       total,
@@ -996,7 +1079,7 @@ class FishMarketDB {
     // If balance_change is positive, customer paid (outstanding decreases)
     // So outstanding change is simply the negative of balance change
     const outstandingChange = -balanceChange;
-    
+
     const stmt = this.db.prepare(`
       INSERT INTO daily_summary (date, total_sales, total_cash_received, total_outstanding, transactions_count)
       VALUES (@date, @total_sales, @cash_received, @outstanding, 1)
@@ -1010,7 +1093,7 @@ class FishMarketDB {
         transactions_count = transactions_count + 1,
         updated_at = CURRENT_TIMESTAMP
     `);
-    
+
     return stmt.run({
       date,
       total_sales: totalAmount,
@@ -1036,12 +1119,12 @@ class FishMarketDB {
   // Dashboard statistics
   getDashboardStats() {
     const today = new Date().toISOString().split('T')[0];
-    
+
     // Today's sales
-    const todaySummary = this.getDailySummary(today) || { 
-      total_sales: 0, 
-      total_cash_received: 0, 
-      transactions_count: 0 
+    const todaySummary = this.getDailySummary(today) || {
+      total_sales: 0,
+      total_cash_received: 0,
+      transactions_count: 0
     };
 
     // Pending bills (customers with negative balance)
@@ -1074,13 +1157,13 @@ class FishMarketDB {
   backup() {
     const isDev = !app.isPackaged;
     let dbDir;
-    
+
     if (isDev) {
       dbDir = path.join(__dirname, '../../database');
     } else {
       dbDir = path.join(app.getPath('userData'), 'database');
     }
-    
+
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupPath = path.join(dbDir, `fishmarket_backup_${timestamp}.db`);
     this.db.backup(backupPath);

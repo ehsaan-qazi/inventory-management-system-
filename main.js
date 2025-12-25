@@ -178,6 +178,14 @@ function setupIPCHandlers() {
     return db.toggleFishCategory(id, active);
   });
 
+  ipcMain.handle('db:isFishCategoryReferenced', async (event, id) => {
+    return db.isFishCategoryReferenced(id);
+  });
+
+  ipcMain.handle('db:deleteFishCategory', async (event, id) => {
+    return db.deleteFishCategory(id);
+  });
+
   // Transaction operations
   ipcMain.handle('db:getTransactions', async (event, options) => {
     return db.getTransactions(options || {});

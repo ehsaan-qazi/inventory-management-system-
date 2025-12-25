@@ -20,7 +20,7 @@ async function loadFishCategories() {
 // Display fish categories in table
 function displayFishCategories(fishList) {
   const tbody = document.getElementById('fishTable');
-  
+
   if (fishList.length === 0) {
     tbody.innerHTML = '<tr><td colspan="5" class="no-data">No fish categories found. Add your first category!</td></tr>';
     return;
@@ -43,6 +43,9 @@ function displayFishCategories(fishList) {
                   title="${fish.active ? 'Deactivate' : 'Activate'}">
             ${fish.active ? '<img src="../assets/delete.png" alt="Deactivate" style="width: 16px; height: 16px;">' : '✅'}
           </button>
+          <button class="action-btn" onclick="deleteFish(${fish.id})" title="Permanently Delete" style="background: #ffebee; color: #c62828;">
+            🗑️
+          </button>
         </td>
       </tr>
     `;
@@ -53,13 +56,13 @@ function displayFishCategories(fishList) {
 function searchFish() {
   const searchInput = document.getElementById('searchInput');
   const query = searchInput.value.trim().toLowerCase();
-  
+
   if (!query) {
     displayFishCategories(allFish);
     return;
   }
 
-  const filtered = allFish.filter(fish => 
+  const filtered = allFish.filter(fish =>
     fish.name.toLowerCase().includes(query)
   );
   displayFishCategories(filtered);
@@ -91,7 +94,7 @@ async function editFish(id) {
     document.getElementById('fishPrice').value = fish.price_per_maund;
     document.getElementById('fishActive').checked = fish.active === 1;
     document.getElementById('statusGroup').style.display = 'block';
-    
+
     document.getElementById('fishModal').classList.add('active');
   } catch (error) {
     console.error('Error loading fish category:', error);
@@ -110,7 +113,7 @@ function closeFishModal() {
 async function saveFish() {
   const saveBtn = document.querySelector('.btn-primary');
   setButtonLoading(saveBtn, true);
-  
+
   try {
     const name = document.getElementById('fishName').value.trim();
     const price = parseFloat(document.getElementById('fishPrice').value);
@@ -129,21 +132,21 @@ async function saveFish() {
       return;
     }
 
-    const fishData = { 
-      name: nameValidation.value, 
+    const fishData = {
+      name: nameValidation.value,
       price_per_maund: roundMoney(priceValidation.value) // Issue 2
     };
     if (currentEditingId) {
       // Update existing fish
       await window.electronAPI.updateFishCategory(currentEditingId, fishData);
-      
+
       // Update active status if changed
       const active = document.getElementById('fishActive').checked;
       const currentFish = allFish.find(f => f.id === currentEditingId);
       if (currentFish && currentFish.active !== (active ? 1 : 0)) {
         await window.electronAPI.toggleFishCategory(currentEditingId, active);
       }
-      
+
       showAlert('Fish category updated successfully', 'success');
     } else {
       // Add new fish
@@ -177,10 +180,9 @@ async function toggleFishStatus(id, active) {
 
   const action = active ? 'activate' : 'deactivate';
   const confirmToggle = confirm(
-    `Are you sure you want to ${action} "${fish.name}"?\n\n${
-      active 
-        ? 'This will make it available for transactions.' 
-        : 'This will hide it from new transactions but keep historical data.'
+    `Are you sure you want to ${action} "${fish.name}"?\n\n${active
+      ? 'This will make it available for transactions.'
+      : 'This will hide it from new transactions but keep historical data.'
     }`
   );
 
@@ -196,24 +198,64 @@ async function toggleFishStatus(id, active) {
   }
 }
 
+// Permanently delete fish category
+async function deleteFish(id) {
+  const fish = allFish.find(f => f.id === id);
+  if (!fish) return;
+
+  // First check if category is referenced
+  try {
+    const refs = await window.electronAPI.isFishCategoryReferenced(id);
+
+    if (refs.isReferenced) {
+      showAlert(
+        `Cannot delete "${fish.name}": It is used in ${refs.totalCount} transaction(s). ` +
+        `Use deactivate instead to hide it from new transactions.`,
+        'error'
+      );
+      return;
+    }
+
+    // Confirm deletion
+    const confirmDelete = confirm(
+      `Are you sure you want to PERMANENTLY delete "${fish.name}"?\n\n` +
+      `⚠️ This action cannot be undone!\n\n` +
+      `If you just want to hide it from new transactions, use the deactivate button instead.`
+    );
+
+    if (!confirmDelete) return;
+
+    await window.electronAPI.deleteFishCategory(id);
+    showAlert('Fish category deleted permanently', 'success');
+    await loadFishCategories();
+  } catch (error) {
+    console.error('Error deleting fish category:', error);
+    let errorMessage = 'Failed to delete fish category';
+    if (error && error.message) {
+      errorMessage = error.message;
+    }
+    showAlert(errorMessage, 'error');
+  }
+}
+
 // Show alert message
 function showAlert(message, type = 'info') {
   const alertContainer = document.getElementById('alertContainer');
   const alert = document.createElement('div');
   alert.className = `alert alert-${type}`;
   alert.textContent = message;
-  
+
   alertContainer.appendChild(alert);
-  
+
   setTimeout(() => {
     alert.remove();
   }, 5000);
 }
 
 // Close modal when clicking outside
-window.onclick = function(event) {
+window.onclick = function (event) {
   const fishModal = document.getElementById('fishModal');
-  
+
   if (event.target === fishModal) {
     closeFishModal();
   }
