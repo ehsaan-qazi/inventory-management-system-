@@ -248,6 +248,36 @@ class FishMarketDB {
       // Column already exists, ignore
     }
 
+    // Add extra_charges column to transactions table for customer extra charges feature
+    try {
+      this.db.exec(`ALTER TABLE transactions ADD COLUMN extra_charges REAL DEFAULT 0`);
+      console.log('Added extra_charges column to transactions table');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
+    // Add labour_rate_per_kg column to farmer_transactions for rate-based labour calculation
+    try {
+      this.db.exec(`ALTER TABLE farmer_transactions ADD COLUMN labour_rate_per_kg REAL DEFAULT 0`);
+      console.log('Added labour_rate_per_kg column to farmer_transactions table');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
+    // Create farmer_transaction_items table for multi-item farmer transactions
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS farmer_transaction_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        transaction_id INTEGER NOT NULL,
+        fish_category_id INTEGER,
+        fish_name TEXT NOT NULL,
+        weight_kg REAL NOT NULL,
+        price_per_maund REAL NOT NULL,
+        subtotal REAL NOT NULL,
+        FOREIGN KEY (transaction_id) REFERENCES farmer_transactions(id) ON DELETE CASCADE
+      )
+    `);
+
     console.log('Database tables initialized successfully');
   }
 
@@ -687,11 +717,11 @@ class FishMarketDB {
       const stmt = this.db.prepare(`
         INSERT INTO transactions (
           customer_id, transaction_date, transaction_time, 
-          total_amount, paid_amount, balance_change, balance_after, payment_status, notes
+          total_amount, paid_amount, balance_change, balance_after, payment_status, notes, extra_charges
         )
         VALUES (
           @customer_id, @transaction_date, @transaction_time,
-          @total_amount, @paid_amount, @balance_change, @balance_after, @payment_status, @notes
+          @total_amount, @paid_amount, @balance_change, @balance_after, @payment_status, @notes, @extra_charges
         )
       `);
 
@@ -704,7 +734,8 @@ class FishMarketDB {
         balance_change: txn.balance_change,
         balance_after: txn.balance_after,
         payment_status: txn.payment_status,
-        notes: txn.notes || null
+        notes: txn.notes || null,
+        extra_charges: txn.extra_charges || 0
       });
 
       const transactionId = info.lastInsertRowid;

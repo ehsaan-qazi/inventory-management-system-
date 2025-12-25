@@ -456,7 +456,10 @@ function renderBillItems() {
 // Calculate totals
 function calculateTotals() {
   // Use money rounding to prevent floating point errors (Issue 2)
-  const total = billItems.reduce((sum, item) => roundMoney(sum + item.subtotal), 0);
+  const itemsTotal = billItems.reduce((sum, item) => roundMoney(sum + item.subtotal), 0);
+  const extraCharges = parseFloat(document.getElementById('customerExtraCharges').value) || 0;
+  const total = roundMoney(itemsTotal + extraCharges);
+
   document.getElementById('totalAmount').value = formatMoney(total);
 
   // Set paid amount to total by default if it's 0
@@ -556,6 +559,7 @@ async function saveTransaction() {
       balance_after: newBalance,
       payment_status: paymentStatus,
       notes: notes || null,
+      extra_charges: parseFloat(document.getElementById('customerExtraCharges').value) || 0,
       items: billItems
     };
 
@@ -598,6 +602,7 @@ function clearForm() {
   document.getElementById('fishCategoryId').value = '';
   document.getElementById('pricePerMaund').value = '';
   document.getElementById('itemSubtotal').value = '0.00';
+  document.getElementById('customerExtraCharges').value = '0';
   document.getElementById('totalAmount').value = '0.00';
   document.getElementById('paidAmount').value = '0';
   document.getElementById('balanceChange').value = '0.00';
@@ -792,6 +797,8 @@ async function viewTransaction(id) {
         </table>
 
         <div style="text-align: right; margin-bottom: 20px;">
+          ${(txn.extra_charges && txn.extra_charges > 0) ? `<p style="margin: 5px 0;">Items Subtotal: Rs.${(txn.total_amount - txn.extra_charges).toFixed(2)}</p>
+          <p style="margin: 5px 0;">Extra Charges: Rs.${txn.extra_charges.toFixed(2)}</p>` : ''}
           <p style="font-size: 18px; margin: 5px 0;"><strong>Total: Rs.${txn.total_amount.toFixed(2)}</strong></p>
           <p style="margin: 5px 0;">Paid: Rs.${txn.paid_amount.toFixed(2)}</p>
           <p style="margin: 5px 0; ${txn.balance_change < 0 ? 'color: red;' : txn.balance_change > 0 ? 'color: green;' : ''}">
@@ -1277,7 +1284,12 @@ function calculateFarmerTotals() {
   // Get other charges
   const munshiNama = parseFloat(document.getElementById('munshiNama').value) || 0;
   const barafPrice = parseFloat(document.getElementById('barafPrice').value) || 0;
-  const labourCharges = parseFloat(document.getElementById('labourCharges').value) || 0;
+
+  // Calculate labour charges from rate per kg × total weight
+  const labourRatePerKg = parseFloat(document.getElementById('labourRatePerKg').value) || 0;
+  const labourCharges = roundMoney(labourRatePerKg * totalKg);
+  document.getElementById('labourChargesTotal').textContent = labourCharges.toFixed(2);
+
   const extraCharges = parseFloat(document.getElementById('extraCharges').value) || 0;
 
   // Calculate net to farmer
@@ -1407,7 +1419,11 @@ async function saveFarmerTransaction() {
     // Get other charges
     const munshiNama = parseFloat(document.getElementById('munshiNama').value) || 0;
     const barafPrice = parseFloat(document.getElementById('barafPrice').value) || 0;
-    const labourCharges = parseFloat(document.getElementById('labourCharges').value) || 0;
+
+    // Calculate labour charges from rate per kg
+    const labourRatePerKg = parseFloat(document.getElementById('labourRatePerKg').value) || 0;
+    const labourCharges = roundMoney(labourRatePerKg * totalWeightKg);
+
     const extraCharges = parseFloat(document.getElementById('extraCharges').value) || 0;
     const notes = document.getElementById('farmerNotes').value.trim();
 
@@ -1500,6 +1516,7 @@ async function saveFarmerTransaction() {
       commission_amount: commissionAmount,
       munshi_nama: munshiNama,
       baraf_price: barafPrice,
+      labour_rate_per_kg: labourRatePerKg,
       labour_charges: labourCharges,
       extra_charges: extraCharges,
       total_amount: totalAmount,
@@ -1587,7 +1604,7 @@ async function viewFarmerTransaction(id) {
             ` : ''}
             ${txn.labour_charges > 0 ? `
             <tr style="border-bottom: 1px solid #ddd;">
-              <td style="padding: 8px;">Labour Charges</td>
+              <td style="padding: 8px;">Labour Charges${txn.labour_rate_per_kg ? ` (Rs.${txn.labour_rate_per_kg.toFixed(2)}/KG)` : ''}</td>
               <td style="text-align: right; padding: 8px; color: #d32f2f;">- Rs.${txn.labour_charges.toFixed(2)}</td>
             </tr>
             ` : ''}
@@ -1655,7 +1672,8 @@ function clearFarmerForm() {
   document.getElementById('commissionAmount').value = '';
   document.getElementById('munshiNama').value = '0';
   document.getElementById('barafPrice').value = '0';
-  document.getElementById('labourCharges').value = '0';
+  document.getElementById('labourRatePerKg').value = '0';
+  document.getElementById('labourChargesTotal').textContent = '0.00';
   document.getElementById('extraCharges').value = '0';
   document.getElementById('farmerNotes').value = '';
 
