@@ -53,5 +53,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Utility operations
   searchCustomers: (query) => ipcRenderer.invoke('db:searchCustomers', query),
   backupDatabase: () => ipcRenderer.invoke('db:backup'),
+
+  // PDF operations
+  savePDF: (data) => ipcRenderer.invoke('print:savePDF', data),
 });
 

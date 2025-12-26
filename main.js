@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const FishMarketDB = require('./src/js/database');
 
@@ -240,6 +240,55 @@ function setupIPCHandlers() {
   // Utility operations
   ipcMain.handle('db:backup', async () => {
     return db.backup();
+  });
+
+  // PDF Generation
+  ipcMain.handle('print:savePDF', async (event, { html, filename }) => {
+    try {
+      // Create hidden window for PDF generation
+      const pdfWindow = new BrowserWindow({
+        width: 800,
+        height: 600,
+        show: false,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true
+        }
+      });
+
+      // Load the HTML content
+      await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+
+      // Generate PDF
+      const pdfData = await pdfWindow.webContents.printToPDF({
+        printBackground: true,
+        margins: { marginType: 'default' },
+        pageSize: 'A4'
+      });
+
+      // Close the hidden window
+      pdfWindow.close();
+
+      // Show save dialog
+      const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
+        title: 'Save Receipt as PDF',
+        defaultPath: filename || 'receipt.pdf',
+        filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
+      });
+
+      if (canceled || !filePath) {
+        return { success: false, message: 'Save cancelled' };
+      }
+
+      // Write PDF to file
+      const fs = require('fs');
+      fs.writeFileSync(filePath, pdfData);
+
+      return { success: true, filePath };
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      return { success: false, message: error.message };
+    }
   });
 }
 

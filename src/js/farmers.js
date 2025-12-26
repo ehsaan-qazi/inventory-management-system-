@@ -696,6 +696,44 @@ function printFarmerReceipt() {
   printWindow.print();
 }
 
+// Save farmer receipt as PDF
+async function saveFarmerReceiptAsPDF() {
+  try {
+    const receiptContent = document.getElementById('farmerReceiptContent').innerHTML;
+    
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Farmer Receipt</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; background: white; }
+          table { width: 100%; border-collapse: collapse; }
+          td, th { padding: 8px; border-bottom: 1px solid #ddd; }
+          h2, h3 { margin: 0 0 10px 0; }
+        </style>
+      </head>
+      <body>${receiptContent}</body>
+      </html>
+    `;
+
+    const now = new Date();
+    const filename = `farmer_receipt_${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}.pdf`;
+
+    const result = await window.electronAPI.savePDF({ html, filename });
+
+    if (result.success) {
+      showAlert('PDF saved successfully!', 'success');
+    } else if (result.message !== 'Save cancelled') {
+      showAlert('Failed to save PDF: ' + result.message, 'error');
+    }
+  } catch (error) {
+    console.error('Error saving PDF:', error);
+    showAlert('Failed to save PDF: ' + error.message, 'error');
+  }
+}
+
 // Helper function to format weight
 function formatWeight(totalKg) {
   const KG_PER_MAUND = 40;
@@ -749,6 +787,7 @@ window.saveEditedFarmerTransaction = saveEditedFarmerTransaction;
 window.viewFarmerTransactionReceipt = viewFarmerTransactionReceipt;
 window.closeViewFarmerReceiptModal = closeViewFarmerReceiptModal;
 window.printFarmerReceipt = printFarmerReceipt;
+window.saveFarmerReceiptAsPDF = saveFarmerReceiptAsPDF;
 
 })(); // End of IIFE
 

@@ -969,6 +969,60 @@ function printBill() {
   printWindow.print();
 }
 
+// Save bill as PDF
+async function saveBillAsPDF() {
+  try {
+    const billContent = document.getElementById('billContent').innerHTML;
+
+    // Construct full HTML with styling for PDF
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Receipt</title>
+        <style>
+          body {
+            font-family: 'Arial', sans-serif;
+            margin: 20px;
+            background: white;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+          }
+          td, th {
+            padding: 8px;
+            border-bottom: 1px solid #ddd;
+          }
+          h2, h3 {
+            margin: 0 0 10px 0;
+          }
+        </style>
+      </head>
+      <body>
+        ${billContent}
+      </body>
+      </html>
+    `;
+
+    // Generate filename with timestamp
+    const now = new Date();
+    const filename = `receipt_${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}.pdf`;
+
+    const result = await window.electronAPI.savePDF({ html, filename });
+
+    if (result.success) {
+      showAlert('PDF saved successfully!', 'success');
+    } else if (result.message !== 'Save cancelled') {
+      showAlert('Failed to save PDF: ' + result.message, 'error');
+    }
+  } catch (error) {
+    console.error('Error saving PDF:', error);
+    showAlert('Failed to save PDF: ' + error.message, 'error');
+  }
+}
+
 // Show alert message
 function showAlert(message, type = 'info') {
   const alertContainer = document.getElementById('alertContainer');
