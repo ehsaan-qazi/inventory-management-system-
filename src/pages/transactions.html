@@ -246,6 +246,23 @@
                         <!-- Fish Selection Section -->
                         <h3 style="margin: 20px 0 15px; font-size: 18px;">Fish Details</h3>
                         <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                            <!-- Cart Items Table -->
+                            <table class="data-table" style="margin-bottom: 15px;">
+                                <thead>
+                                    <tr>
+                                        <th>Fish</th>
+                                        <th>Weight</th>
+                                        <th>Price/Maund</th>
+                                        <th>Subtotal</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="farmerItemsTable">
+                                    <tr><td colspan="5" class="no-data">No items added</td></tr>
+                                </tbody>
+                            </table>
+
+                            <h4 style="margin: 15px 0 10px; font-size: 16px;">Add Fish Item</h4>
                             <div class="form-row">
                                 <div class="form-group" style="flex: 2;">
                                     <label for="farmerFishSelect">Select Fish</label>
@@ -273,14 +290,14 @@
                                 <div class="form-group">
                                     <label for="farmerWeightMaund">Weight (Maund)</label>
                                     <input type="number" id="farmerWeightMaund" class="form-control" step="1" min="0"
-                                        value="0" oninput="calculateFarmerTotalWeight()">
+                                        value="0" oninput="calculateFarmerItemWeight()">
                                     <small style="color: var(--text-secondary); font-size: 11px;">1 Maund = 40
                                         KG</small>
                                 </div>
                                 <div class="form-group">
                                     <label for="farmerWeightKg">Weight (KG)</label>
                                     <input type="number" id="farmerWeightKg" class="form-control" step="0.01" min="0"
-                                        value="0" oninput="calculateFarmerTotalWeight()">
+                                        value="0" oninput="calculateFarmerItemWeight()">
                                 </div>
                                 <div class="form-group">
                                     <label for="farmerTotalWeight">Total Weight</label>
@@ -291,28 +308,33 @@
 
                             <div class="form-row">
                                 <div class="form-group">
-                                    <label for="farmerPricePerMaund">Farmer Price per Maund (Rs.) *</label>
+                                    <label for="farmerPricePerMaund">Price per Maund (Rs.) *</label>
                                     <input type="number" id="farmerPricePerMaund" class="form-control" step="0.01"
-                                        min="0" oninput="calculateFarmerTotals()">
+                                        min="0" oninput="calculateFarmerItemSubtotal()">
                                 </div>
                                 <div class="form-group">
-                                    <label for="customerMarkup">Customer Markup (%) *</label>
-                                    <input type="number" id="customerMarkup" class="form-control" step="1" min="1"
-                                        max="100" placeholder="1-100" oninput="calculateFarmerTotals()">
-                                    <small style="color: var(--text-secondary); font-size: 11px;">Will be added to fish
-                                        category price</small>
-                                </div>
-                                <div class="form-group">
-                                    <label>Final Price/Maund (with markup)</label>
-                                    <input type="text" id="finalPricePerMaund" class="form-control" readonly
-                                        style="font-weight: 600; background: #e3f2fd;">
+                                    <label for="farmerItemSubtotal">Subtotal (Rs.)</label>
+                                    <input type="text" id="farmerItemSubtotal" class="form-control" readonly value="0.00"
+                                        style="font-size: 16px; font-weight: 700;">
                                 </div>
                             </div>
+                            <button class="btn btn-primary" onclick="addFarmerItem()">+ Add Item</button>
 
-                            <div class="form-group">
-                                <label>Total Fish Value (Rs.)</label>
-                                <input type="text" id="totalFishValue" class="form-control" readonly value="0.00"
-                                    style="font-size: 18px; font-weight: 700; background: #e8f5e9;">
+                            <!-- Markup Section -->
+                            <div style="margin-top: 20px; padding: 15px; background: #e3f2fd; border-radius: 8px;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Total Fish Value (Rs.)</label>
+                                        <input type="text" id="totalFishValue" class="form-control" readonly value="0.00"
+                                            style="font-size: 18px; font-weight: 700; background: #e8f5e9;">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="customerMarkup">Customer Markup (%) *</label>
+                                        <input type="number" id="customerMarkup" class="form-control" step="1" min="1"
+                                            max="100" placeholder="1-100" oninput="calculateFarmerTotals()">
+                                        <small style="color: var(--text-secondary); font-size: 11px;">Added to fish category prices</small>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 

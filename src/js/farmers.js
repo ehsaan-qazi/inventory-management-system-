@@ -563,6 +563,41 @@ async function viewFarmerTransactionReceipt(txnId) {
     const date = new Date(txn.transaction_date);
     const receiptContent = document.getElementById('farmerReceiptContent');
     
+    // Build fish items section - handle both multi-item and legacy single-item transactions
+    let fishItemsHtml = '';
+    if (txn.items && txn.items.length > 0) {
+      // Multi-item transaction
+      fishItemsHtml = `
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+          <thead>
+            <tr style="border-bottom: 2px solid #000;">
+              <th style="padding: 8px; text-align: left;">Fish</th>
+              <th style="padding: 8px; text-align: right;">Weight</th>
+              <th style="padding: 8px; text-align: right;">Price/Maund</th>
+              <th style="padding: 8px; text-align: right;">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${txn.items.map(item => `
+              <tr style="border-bottom: 1px solid #ddd;">
+                <td style="padding: 8px;">${item.fish_name}</td>
+                <td style="padding: 8px; text-align: right;">${formatWeight(item.weight_kg)}</td>
+                <td style="padding: 8px; text-align: right;">Rs.${item.price_per_maund.toFixed(2)}</td>
+                <td style="padding: 8px; text-align: right;">Rs.${item.subtotal.toFixed(2)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } else {
+      // Legacy single-item transaction (fallback for old data)
+      fishItemsHtml = `
+        <p><strong>Fish:</strong> ${txn.fish_name || 'N/A'}</p>
+        <p><strong>Weight:</strong> ${formatWeight(txn.total_weight_kg)}</p>
+        <p><strong>Price per Maund:</strong> Rs.${(txn.price_per_maund || 0).toFixed(2)}</p>
+      `;
+    }
+    
     receiptContent.innerHTML = `
       <div style="font-family: monospace; padding: 20px; background: white;">
         <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px;">
@@ -579,9 +614,8 @@ async function viewFarmerTransactionReceipt(txnId) {
 
         <div style="margin-bottom: 20px; padding: 15px; background: #f0f8ff; border-radius: 8px;">
           <h3 style="margin-top: 0;">Fish Details</h3>
-          <p><strong>Fish:</strong> ${txn.fish_name}</p>
-          <p><strong>Weight:</strong> ${formatWeight(txn.total_weight_kg)}</p>
-          <p><strong>Price per Maund:</strong> Rs.${txn.price_per_maund.toFixed(2)}</p>
+          ${fishItemsHtml}
+          <p style="font-size: 18px; margin: 10px 0;"><strong>Total Weight: ${formatWeight(txn.total_weight_kg)}</strong></p>
           <p style="font-size: 18px; margin: 10px 0;"><strong>Total Fish Value: Rs.${txn.total_fish_value.toFixed(2)}</strong></p>
         </div>
 
@@ -606,7 +640,7 @@ async function viewFarmerTransactionReceipt(txnId) {
             ` : ''}
             ${txn.labour_charges > 0 ? `
             <tr style="border-bottom: 1px solid #ddd;">
-              <td style="padding: 8px;">Labour Charges</td>
+              <td style="padding: 8px;">Labour Charges${txn.labour_rate_per_kg ? ` (Rs.${txn.labour_rate_per_kg.toFixed(2)}/KG)` : ''}</td>
               <td style="text-align: right; padding: 8px; color: #d32f2f;">- Rs.${txn.labour_charges.toFixed(2)}</td>
             </tr>
             ` : ''}
@@ -623,7 +657,7 @@ async function viewFarmerTransactionReceipt(txnId) {
           <p style="font-size: 20px; margin: 0; font-weight: bold; color: #2e7d32;">
             Net Amount to Farmer: Rs.${txn.total_amount.toFixed(2)}
           </p>
-          <p style="margin: 10px 0 0 0;">Paid: Rs.${txn.paid_amount.toFixed(2)}</p>
+          <p style="margin: 10px 0 0 0;">Paid: Rs.${(txn.paid_amount || 0).toFixed(2)}</p>
           <p style="margin: 5px 0 0 0; font-weight: bold;">
             Balance: Rs.${Math.abs(txn.balance_after).toFixed(2)} 
             ${txn.balance_after < 0 ? '(We Owe)' : txn.balance_after > 0 ? '(Credit)' : '(Balanced)'}

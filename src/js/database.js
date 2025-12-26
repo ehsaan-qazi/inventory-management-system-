@@ -278,6 +278,69 @@ class FishMarketDB {
       )
     `);
 
+    // Migrate old single-item farmer transaction columns to nullable
+    // Since we now use farmer_transaction_items table, these columns are legacy
+    // SQLite doesn't support ALTER COLUMN, so we need to check if columns exist and handle accordingly
+    try {
+      const tableInfo = this.db.pragma('table_info(farmer_transactions)');
+      const fishCategoryIdCol = tableInfo.find(col => col.name === 'fish_category_id');
+
+      // If fish_category_id is NOT NULL (notnull = 1), we need to recreate the table
+      if (fishCategoryIdCol && fishCategoryIdCol.notnull === 1) {
+        console.log('Migrating farmer_transactions schema for multi-item support...');
+
+        // Create temporary table with nullable old columns
+        this.db.exec(`
+          CREATE TABLE farmer_transactions_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            farmer_id INTEGER NOT NULL,
+            transaction_date DATE NOT NULL,
+            transaction_time TIME NOT NULL,
+            fish_category_id INTEGER,
+            fish_name TEXT,
+            weight_maund INTEGER,
+            weight_kg REAL,
+            total_weight_kg REAL NOT NULL,
+            price_per_maund REAL,
+            customer_markup_percentage REAL NOT NULL,
+            final_price_per_maund REAL,
+            total_fish_value REAL NOT NULL,
+            commission_percentage REAL NOT NULL,
+            commission_amount REAL NOT NULL,
+            munshi_nama REAL DEFAULT 0,
+            baraf_price REAL DEFAULT 0,
+            labour_rate_per_kg REAL DEFAULT 0,
+            labour_charges REAL DEFAULT 0,
+            extra_charges REAL DEFAULT 0,
+            total_amount REAL NOT NULL,
+            paid_amount REAL DEFAULT 0,
+            balance_change REAL NOT NULL,
+            balance_after REAL NOT NULL,
+            notes TEXT,
+            status TEXT DEFAULT 'completed',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (farmer_id) REFERENCES farmers(id) ON DELETE CASCADE
+          );
+        `);
+
+        // Copy existing data
+        this.db.exec(`
+          INSERT INTO farmer_transactions_new 
+          SELECT * FROM farmer_transactions;
+        `);
+
+        // Drop old table
+        this.db.exec(`DROP TABLE farmer_transactions;`);
+
+        // Rename new table
+        this.db.exec(`ALTER TABLE farmer_transactions_new RENAME TO farmer_transactions;`);
+
+        console.log('Farmer transactions schema migrated successfully');
+      }
+    } catch (e) {
+      console.error('Error during farmer_transactions migration:', e);
+    }
+
     console.log('Database tables initialized successfully');
   }
 
@@ -472,6 +535,31 @@ class FishMarketDB {
     });
 
     return customers;
+  }
+
+  // Get farmer transaction by ID with items
+  getFarmerTransactionById(id) {
+    // Get main transaction with farmer details
+    const txn = this.db.prepare(`
+      SELECT ft.*, f.name as farmer_name, f.phone as farmer_phone
+      FROM farmer_transactions ft
+      JOIN farmers f ON ft.farmer_id = f.id
+      WHERE ft.id = ?
+    `).get(id);
+
+    if (!txn) return null;
+
+    // Get transaction items
+    const items = this.db.prepare(`
+      SELECT * FROM farmer_transaction_items
+      WHERE transaction_id = ?
+      ORDER BY id
+    `).all(id);
+
+    // Attach items to transaction
+    txn.items = items;
+
+    return txn;
   }
 
   // Farmer operations (similar to customers)
@@ -834,6 +922,7 @@ class FishMarketDB {
     if (paymentStatus) {
       if (paymentStatus === 'unpaid_partial') {
         countQuery += ' AND t.payment_status IN (?, ?)';
+
         countParams.push('unpaid', 'partial');
       } else {
         countQuery += ' AND t.payment_status = ?';
@@ -962,24 +1051,20 @@ class FishMarketDB {
   // Farmer transaction operations
   addFarmerTransaction(transaction) {
     const addTxn = this.db.transaction((txn) => {
-      // Insert farmer transaction
+      // Insert farmer transaction (no longer includes single fish details)
       const stmt = this.db.prepare(`
         INSERT INTO farmer_transactions (
           farmer_id, transaction_date, transaction_time,
-          fish_category_id, fish_name,
-          weight_maund, weight_kg, total_weight_kg,
-          price_per_maund, customer_markup_percentage, final_price_per_maund,
+          total_weight_kg, customer_markup_percentage,
           total_fish_value, commission_percentage, commission_amount,
-          munshi_nama, baraf_price, labour_charges, extra_charges,
+          munshi_nama, baraf_price, labour_rate_per_kg, labour_charges, extra_charges,
           total_amount, paid_amount, balance_change, balance_after, notes, status
         )
         VALUES (
           @farmer_id, @transaction_date, @transaction_time,
-          @fish_category_id, @fish_name,
-          @weight_maund, @weight_kg, @total_weight_kg,
-          @price_per_maund, @customer_markup_percentage, @final_price_per_maund,
+          @total_weight_kg, @customer_markup_percentage,
           @total_fish_value, @commission_percentage, @commission_amount,
-          @munshi_nama, @baraf_price, @labour_charges, @extra_charges,
+          @munshi_nama, @baraf_price, @labour_rate_per_kg, @labour_charges, @extra_charges,
           @total_amount, @paid_amount, @balance_change, @balance_after, @notes, @status
         )
       `);
@@ -988,19 +1073,14 @@ class FishMarketDB {
         farmer_id: txn.farmer_id,
         transaction_date: txn.transaction_date,
         transaction_time: txn.transaction_time,
-        fish_category_id: txn.fish_category_id,
-        fish_name: txn.fish_name,
-        weight_maund: txn.weight_maund,
-        weight_kg: txn.weight_kg,
         total_weight_kg: txn.total_weight_kg,
-        price_per_maund: txn.price_per_maund,
         customer_markup_percentage: txn.customer_markup_percentage,
-        final_price_per_maund: txn.final_price_per_maund,
         total_fish_value: txn.total_fish_value,
         commission_percentage: txn.commission_percentage,
         commission_amount: txn.commission_amount,
         munshi_nama: txn.munshi_nama || 0,
         baraf_price: txn.baraf_price || 0,
+        labour_rate_per_kg: txn.labour_rate_per_kg || 0,
         labour_charges: txn.labour_charges || 0,
         extra_charges: txn.extra_charges || 0,
         total_amount: txn.total_amount,
@@ -1013,14 +1093,29 @@ class FishMarketDB {
 
       const transactionId = info.lastInsertRowid;
 
+      // Insert farmer transaction items
+      if (txn.items && txn.items.length > 0) {
+        const itemStmt = this.db.prepare(`
+          INSERT INTO farmer_transaction_items (
+            transaction_id, fish_category_id, fish_name, weight_kg, price_per_maund, subtotal
+          )
+          VALUES (@transaction_id, @fish_category_id, @fish_name, @weight_kg, @price_per_maund, @subtotal)
+        `);
+
+        for (const item of txn.items) {
+          itemStmt.run({
+            transaction_id: transactionId,
+            fish_category_id: item.fish_category_id,
+            fish_name: item.fish_name,
+            weight_kg: item.weight_kg,
+            price_per_maund: item.price_per_maund,
+            subtotal: item.subtotal
+          });
+        }
+      }
+
       // Update farmer balance
       this.updateFarmerBalance(txn.farmer_id, txn.balance_after);
-
-      // Update fish category price with markup
-      this.updateFishCategory(txn.fish_category_id, {
-        name: txn.fish_name,
-        price_per_maund: txn.final_price_per_maund
-      });
 
       return transactionId;
     });
@@ -1084,21 +1179,20 @@ class FishMarketDB {
     };
   }
 
-  getFarmerTransactionById(id) {
-    const stmt = this.db.prepare(`
-      SELECT ft.*, f.name as farmer_name, f.phone as farmer_phone
-      FROM farmer_transactions ft
-      JOIN farmers f ON ft.farmer_id = f.id
-      WHERE ft.id = ?
-    `);
-    return stmt.get(id);
-  }
-
   getTransactionsByFarmer(farmerId) {
+    // Query farmer transactions with aggregated fish names from items table
     const stmt = this.db.prepare(`
-      SELECT * FROM farmer_transactions 
-      WHERE farmer_id = ? AND (status IS NULL OR status = 'completed')
-      ORDER BY transaction_date DESC, transaction_time DESC
+      SELECT ft.*, 
+        COALESCE(
+          (SELECT GROUP_CONCAT(fti.fish_name, ', ') 
+           FROM farmer_transaction_items fti 
+           WHERE fti.transaction_id = ft.id),
+          ft.fish_name,
+          'N/A'
+        ) as fish_name
+      FROM farmer_transactions ft
+      WHERE ft.farmer_id = ? AND (ft.status IS NULL OR ft.status = 'completed')
+      ORDER BY ft.transaction_date DESC, ft.transaction_time DESC
     `);
     return stmt.all(farmerId);
   }

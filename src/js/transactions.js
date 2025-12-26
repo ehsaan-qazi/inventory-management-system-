@@ -1006,6 +1006,128 @@ let farmerSearchTimeout;
 let farmerSuggestionsDiv;
 let isNewFish = false;
 let currentTransactionType = 'customer'; // 'customer' or 'farmer'
+let farmerBillItems = []; // Array to hold multiple fish items for farmer transaction
+
+// Calculate farmer item weight (for add item form)
+function calculateFarmerItemWeight() {
+  const maunds = parseFloat(document.getElementById('farmerWeightMaund').value) || 0;
+  const kg = parseFloat(document.getElementById('farmerWeightKg').value) || 0;
+  const totalKg = maundAndKgToKg(maunds, kg);
+
+  const { maunds: m, kg: k } = kgToMaundAndKg(totalKg);
+  document.getElementById('farmerTotalWeight').value = `${m} Maund ${k.toFixed(2)} KG`;
+
+  calculateFarmerItemSubtotal();
+}
+
+// Calculate farmer item subtotal
+function calculateFarmerItemSubtotal() {
+  const maunds = parseFloat(document.getElementById('farmerWeightMaund').value) || 0;
+  const kg = parseFloat(document.getElementById('farmerWeightKg').value) || 0;
+  const totalKg = maundAndKgToKg(maunds, kg);
+  const pricePerMaund = parseFloat(document.getElementById('farmerPricePerMaund').value) || 0;
+
+  const subtotal = roundMoney((totalKg / KG_PER_MAUND) * pricePerMaund);
+  document.getElementById('farmerItemSubtotal').value = formatMoney(subtotal);
+}
+
+// Add farmer item to bill
+function addFarmerItem() {
+  const fishSelect = document.getElementById('farmerFishSelect');
+  const maunds = parseFloat(document.getElementById('farmerWeightMaund').value) || 0;
+  const kg = parseFloat(document.getElementById('farmerWeightKg').value) || 0;
+  const totalKg = maundAndKgToKg(maunds, kg);
+  const pricePerMaund = parseFloat(document.getElementById('farmerPricePerMaund').value);
+
+  let fishCategoryId, fishName;
+
+  if (isNewFish) {
+    fishName = document.getElementById('newFishName').value.trim();
+    if (!fishName) {
+      showAlert('Please enter the new fish name', 'warning');
+      return;
+    }
+    fishCategoryId = null; // Will be created later
+  } else {
+    if (!fishSelect.value) {
+      showAlert('Please select a fish type', 'warning');
+      return;
+    }
+    fishCategoryId = parseInt(fishSelect.value);
+    const selectedFish = fishCategories.find(f => f.id === fishCategoryId);
+    fishName = selectedFish ? selectedFish.name : fishSelect.options[fishSelect.selectedIndex].text;
+  }
+
+  if (totalKg <= 0) {
+    showAlert('Please enter a valid weight', 'warning');
+    return;
+  }
+
+  if (!pricePerMaund || pricePerMaund <= 0) {
+    showAlert('Please enter a valid price per maund', 'warning');
+    return;
+  }
+
+  const subtotal = roundMoney((totalKg / KG_PER_MAUND) * pricePerMaund);
+
+  const item = {
+    fish_category_id: fishCategoryId,
+    fish_name: fishName,
+    weight_kg: totalKg,
+    price_per_maund: pricePerMaund,
+    subtotal: subtotal,
+    is_new_fish: isNewFish
+  };
+
+  farmerBillItems.push(item);
+  renderFarmerBillItems();
+
+  // Clear item form
+  fishSelect.value = '';
+  document.getElementById('farmerWeightMaund').value = '0';
+  document.getElementById('farmerWeightKg').value = '0';
+  document.getElementById('farmerTotalWeight').value = '0 Maund 0 KG';
+  document.getElementById('farmerPricePerMaund').value = '';
+  document.getElementById('farmerItemSubtotal').value = '0.00';
+  document.getElementById('newFishName').value = '';
+  document.getElementById('newFishInputSection').style.display = 'none';
+  fishSelect.disabled = false;
+  isNewFish = false;
+
+  calculateFarmerTotals();
+}
+
+// Remove farmer item from bill
+function removeFarmerItem(index) {
+  farmerBillItems.splice(index, 1);
+  renderFarmerBillItems();
+  calculateFarmerTotals();
+}
+
+// Render farmer bill items table
+function renderFarmerBillItems() {
+  const tbody = document.getElementById('farmerItemsTable');
+  if (!tbody) return;
+
+  if (farmerBillItems.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="no-data">No items added</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = farmerBillItems.map((item, index) => `
+    <tr>
+      <td>${item.fish_name}${item.is_new_fish ? ' <span style="color: #2e7d32; font-weight: 600;">(NEW)</span>' : ''}</td>
+      <td>${formatWeight(item.weight_kg)}</td>
+      <td>Rs.${item.price_per_maund.toFixed(2)}</td>
+      <td>Rs.${item.subtotal.toFixed(2)}</td>
+      <td>
+        <button class="action-btn delete" onclick="removeFarmerItem(${index})" title="Remove">
+          <img src="../assets/delete.png" alt="Delete" style="width: 16px; height: 16px;">
+        </button>
+      </td>
+    </tr>
+  `).join('');
+}
 
 // Load farmers on page load
 async function loadFarmersData() {
@@ -1260,21 +1382,13 @@ function calculateFarmerTotalWeight() {
 
 // Calculate all farmer transaction totals
 function calculateFarmerTotals() {
-  const maunds = parseFloat(document.getElementById('farmerWeightMaund').value) || 0;
-  const kg = parseFloat(document.getElementById('farmerWeightKg').value) || 0;
-  const totalKg = maundAndKgToKg(maunds, kg);
+  // Aggregate totals from all items in the cart
+  const totalWeightKg = farmerBillItems.reduce((sum, item) => sum + item.weight_kg, 0);
+  const totalFishValue = farmerBillItems.reduce((sum, item) => roundMoney(sum + item.subtotal), 0);
 
-  const farmerPricePerMaund = parseFloat(document.getElementById('farmerPricePerMaund').value) || 0;
-  const markupPercent = parseFloat(document.getElementById('customerMarkup').value) || 0;
-
-  // Calculate final price per maund (with markup)
-  const markupAmount = (farmerPricePerMaund * markupPercent) / 100;
-  const finalPrice = farmerPricePerMaund + markupAmount;
-  document.getElementById('finalPricePerMaund').value = finalPrice > 0 ? `Rs.${finalPrice.toFixed(2)}` : 'Rs.0.00';
-
-  // Calculate total fish value (what farmer gets for the fish)
-  const totalFishValue = roundMoney((totalKg / KG_PER_MAUND) * farmerPricePerMaund);
   document.getElementById('totalFishValue').value = formatMoney(totalFishValue);
+
+  const markupPercent = parseFloat(document.getElementById('customerMarkup').value) || 0;
 
   // Calculate commission on original farmer price
   const commissionPercent = parseFloat(document.getElementById('commissionPercent').value) || 0;
@@ -1287,7 +1401,7 @@ function calculateFarmerTotals() {
 
   // Calculate labour charges from rate per kg × total weight
   const labourRatePerKg = parseFloat(document.getElementById('labourRatePerKg').value) || 0;
-  const labourCharges = roundMoney(labourRatePerKg * totalKg);
+  const labourCharges = roundMoney(labourRatePerKg * totalWeightKg);
   document.getElementById('labourChargesTotal').textContent = labourCharges.toFixed(2);
 
   const extraCharges = parseFloat(document.getElementById('extraCharges').value) || 0;
@@ -1346,7 +1460,7 @@ function toggleFarmerForm() {
   }
 }
 
-// Save farmer transaction
+// Save farmer transaction (REFACTORED FOR MULTI-ITEM)
 async function saveFarmerTransaction() {
   const saveBtn = event ? event.target : document.querySelector('#farmerTransactionSection .btn-primary');
   setButtonLoading(saveBtn, true);
@@ -1356,63 +1470,36 @@ async function saveFarmerTransaction() {
     const farmerId = parseInt(document.getElementById('selectedFarmerId').value);
     if (!farmerId) {
       showAlert('Please select a farmer', 'warning');
+      setButtonLoading(saveBtn, false);
       return;
     }
 
-    // Get fish details
-    let fishCategoryId;
-    let fishName;
-
-    if (isNewFish) {
-      fishName = document.getElementById('newFishName').value.trim();
-      if (!fishName) {
-        showAlert('Please enter the new fish name', 'warning');
-        return;
-      }
-    } else {
-      const fishSelect = document.getElementById('farmerFishSelect');
-      fishCategoryId = parseInt(fishSelect.value);
-      if (!fishCategoryId) {
-        showAlert('Please select a fish or add a new one', 'warning');
-        return;
-      }
-      fishName = fishSelect.options[fishSelect.selectedIndex].text;
-    }
-
-    // Get weight
-    const weightMaund = parseInt(document.getElementById('farmerWeightMaund').value) || 0;
-    const weightKg = parseFloat(document.getElementById('farmerWeightKg').value) || 0;
-    const totalWeightKg = maundAndKgToKg(weightMaund, weightKg);
-
-    if (totalWeightKg <= 0) {
-      showAlert('Please enter a valid weight', 'warning');
+    // Validate items
+    if (farmerBillItems.length === 0) {
+      showAlert('Please add at least one fish item', 'warning');
+      setButtonLoading(saveBtn, false);
       return;
     }
 
-    // Get prices
-    const farmerPricePerMaund = parseFloat(document.getElementById('farmerPricePerMaund').value);
-    if (!farmerPricePerMaund || farmerPricePerMaund <= 0) {
-      showAlert('Please enter farmer price per maund', 'warning');
-      return;
-    }
-
+    // Get customer markup
     const markupPercent = parseFloat(document.getElementById('customerMarkup').value);
     if (!markupPercent || markupPercent < 1 || markupPercent > 100) {
       showAlert('Please enter customer markup (1-100%)', 'warning');
+      setButtonLoading(saveBtn, false);
       return;
     }
-
-    const finalPricePerMaund = roundMoney(farmerPricePerMaund + (farmerPricePerMaund * markupPercent / 100));
-
-    // Calculate total fish value
-    const totalFishValue = roundMoney((totalWeightKg / KG_PER_MAUND) * farmerPricePerMaund);
 
     // Get commission
     const commissionPercent = parseFloat(document.getElementById('commissionPercent').value);
     if (!commissionPercent || commissionPercent < 1 || commissionPercent > 100) {
       showAlert('Please enter commission percentage (1-100%)', 'warning');
+      setButtonLoading(saveBtn, false);
       return;
     }
+
+    // Calculate totals from items
+    const totalWeightKg = farmerBillItems.reduce((sum, item) => sum + item.weight_kg, 0);
+    const totalFishValue = farmerBillItems.reduce((sum, item) => roundMoney(sum + item.subtotal), 0);
 
     const commissionAmount = roundMoney((totalFishValue * commissionPercent) / 100);
 
@@ -1436,6 +1523,7 @@ async function saveFarmerTransaction() {
     // Validate paid amount
     if (paidAmount < 0) {
       showAlert('Paid amount cannot be negative', 'warning');
+      setButtonLoading(saveBtn, false);
       return;
     }
 
@@ -1445,72 +1533,62 @@ async function saveFarmerTransaction() {
       const confirmSave = confirm(
         `Outstanding amount: Rs.${outstandingAmount.toFixed(2)}\n\nThis will be added to the farmer's balance (you will owe the farmer). Continue?`
       );
-      if (!confirmSave) return;
+      if (!confirmSave) {
+        setButtonLoading(saveBtn, false);
+        return;
+      }
     }
 
     // Calculate balance change
-    // Balance change = what we owe - what we paid
-    // Negative balance = we owe the farmer
     const currentBalance = currentFarmer ? parseFloat(currentFarmer.balance) : 0;
     const balanceChange = -(totalAmount - paidAmount); // Negative = we owe more
     const balanceAfter = roundMoney(currentBalance + balanceChange);
 
-    // If new fish, create it first
-    if (isNewFish) {
-      try {
-        const newFishId = await window.electronAPI.addFishCategory({
-          name: fishName,
-          price_per_maund: finalPricePerMaund,
-          active: 1
-        });
-        fishCategoryId = newFishId;
-
-        // Reload fish categories
-        await loadFishCategories();
-        loadFarmerFishCategories();
-
-        showAlert(`New fish "${fishName}" added to categories!`, 'success');
-      } catch (error) {
-        showAlert('Failed to add new fish: ' + error.message, 'error');
-        return;
-      }
-    } else {
-      // Update existing fish category price with markup
-      try {
-        const fishCategory = fishCategories.find(f => f.id === fishCategoryId);
-        if (fishCategory) {
-          await window.electronAPI.updateFishCategory(fishCategoryId, {
-            name: fishCategory.name,
-            price_per_maund: finalPricePerMaund
-          });
-
-          // Reload fish categories
-          await loadFishCategories();
-          loadFarmerFishCategories();
-        }
-      } catch (error) {
-        console.error('Failed to update fish price:', error);
-        // Continue anyway, don't block the transaction
-      }
-    }
-
     // Get current date and time
     const transactionDate = getCurrentDate();
     const transactionTime = getCurrentTime();
+
+    // Handle new fish categories if any  
+    for (let item of farmerBillItems) {
+      if (item.is_new_fish) {
+        try {
+          const finalPricePerMaund = roundMoney(item.price_per_maund + (item.price_per_maund * markupPercent / 100));
+          const newFishId = await window.electronAPI.addFishCategory({
+            name: item.fish_name,
+            price_per_maund: finalPricePerMaund,
+            active: 1
+          });
+          item.fish_category_id = newFishId;
+          showAlert(`New fish "${item.fish_name}" added to categories!`, 'success');
+        } catch (error) {
+          showAlert('Failed to add new fish: ' + error.message, 'error');
+          setButtonLoading(saveBtn, false);
+          return;
+        }
+      } else {
+        // Update existing fish category price with markup
+        try {
+          const fishCategory = fishCategories.find(f => f.id === item.fish_category_id);
+          if (fishCategory) {
+            const finalPrice = roundMoney(item.price_per_maund + (item.price_per_maund * markupPercent / 100));
+            await window.electronAPI.updateFishCategory(item.fish_category_id, {
+              name: fishCategory.name,
+              price_per_maund: finalPrice
+            });
+          }
+        } catch (error) {
+          console.error('Failed to update fish category:', error);
+        }
+      }
+    }
 
     // Create farmer transaction
     const farmerTransaction = {
       farmer_id: farmerId,
       transaction_date: transactionDate,
       transaction_time: transactionTime,
-      fish_category_id: fishCategoryId,
-      fish_name: fishName,
-      weight_maund: weightMaund,
-      weight_kg: weightKg,
       total_weight_kg: totalWeightKg,
-      price_per_maund: farmerPricePerMaund,
       customer_markup_percentage: markupPercent,
-      final_price_per_maund: finalPricePerMaund,
       total_fish_value: totalFishValue,
       commission_percentage: commissionPercent,
       commission_amount: commissionAmount,
@@ -1523,7 +1601,8 @@ async function saveFarmerTransaction() {
       paid_amount: paidAmount,
       balance_change: balanceChange,
       balance_after: balanceAfter,
-      notes: notes || null
+      notes: notes || null,
+      items: farmerBillItems // Pass items array
     };
 
     const transactionId = await window.electronAPI.addFarmerTransaction(farmerTransaction);
@@ -1537,17 +1616,28 @@ async function saveFarmerTransaction() {
     // Clear form and reload
     clearFarmerForm();
     await loadFarmersData();
+    await loadFarmerTransactions();
 
-  } catch (error) {
-    let errorMessage = 'Failed to save farmer transaction';
-    if (error && error.message) {
-      errorMessage = `Error: ${error.message}`;
+    // Re-select the farmer if they're still current
+    if (farmerId === currentFarmer?.id) {
+      const farmerSelect = document.getElementById('farmerSearch');
+      if (farmerSelect) {
+        const farmer = farmers.find(f => f.id === farmerId);
+        if (farmer) {
+          // Update balance display  
+          currentFarmer = farmer;
+          displayFarmerBalance();
+        }
+      }
     }
-    showAlert(errorMessage, 'error');
+  } catch (error) {
+    console.error('Error saving farmer transaction:', error);
+    showAlert('Failed to save transaction: ' + error.message, 'error');
   } finally {
     setButtonLoading(saveBtn, false);
   }
 }
+
 
 // View farmer transaction (receipt)
 async function viewFarmerTransaction(id) {
@@ -1576,10 +1666,33 @@ async function viewFarmerTransaction(id) {
         </div>
 
         <div style="margin-bottom: 20px; padding: 15px; background: #f0f8ff; border-radius: 8px;">
-          <h3 style="margin-top: 0;">Fish Details</h3>
-          <p><strong>Fish:</strong> ${txn.fish_name}</p>
-          <p><strong>Weight:</strong> ${formatWeight(txn.total_weight_kg)}</p>
-          <p><strong>Price per Maund:</strong> Rs.${txn.price_per_maund.toFixed(2)}</p>
+          <h3 style="margin-top: 0;">Fish Items</h3>
+          ${txn.items && txn.items.length > 0 ? `
+            <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+              <thead>
+                <tr style="border-bottom: 2px solid #000;">
+                  <th style="padding: 8px; text-align: left;">Fish</th>
+                  <th style="padding: 8px; text-align: right;">Weight</th>
+                  <th style="padding: 8px; text-align: right;">Price/Maund</th>
+                  <th style="padding: 8px; text-align: right;">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${txn.items.map(item => `
+                  <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 8px;">${item.fish_name}</td>
+                    <td style="padding: 8px; text-align: right;">${formatWeight(item.weight_kg)}</td>
+                    <td style="padding: 8px; text-align: right;">Rs.${item.price_per_maund.toFixed(2)}</td>
+                    <td style="padding: 8px; text-align: right;">Rs.${item.subtotal.toFixed(2)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : `
+            <p><strong>Fish:</strong> ${txn.fish_name || 'N/A'}</p>
+            <p><strong>Weight:</strong> ${formatWeight(txn.total_weight_kg)}</p>
+            <p><strong>Price per Maund:</strong> Rs.${(txn.price_per_maund || 0).toFixed(2)}</p>
+          `}
           <p style="font-size: 18px; margin: 10px 0;"><strong>Total Fish Value: Rs.${txn.total_fish_value.toFixed(2)}</strong></p>
         </div>
 
@@ -1681,6 +1794,8 @@ function clearFarmerForm() {
   document.getElementById('farmerPaidAmount').value = '0';
   document.getElementById('farmerBalanceChange').value = '';
 
+  farmerBillItems = [];
+  renderFarmerBillItems();
   currentFarmer = null;
 }
 
