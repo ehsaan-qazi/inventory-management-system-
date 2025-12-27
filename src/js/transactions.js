@@ -1535,10 +1535,10 @@ async function saveFarmerTransaction() {
       return;
     }
 
-    // Get customer markup
+    // Get customer markup (0% is valid - no markup)
     const markupPercent = parseFloat(document.getElementById('customerMarkup').value);
-    if (!markupPercent || markupPercent < 1 || markupPercent > 100) {
-      showAlert('Please enter customer markup (1-100%)', 'warning');
+    if (isNaN(markupPercent) || markupPercent < 0 || markupPercent > 100) {
+      showAlert('Please enter customer markup (0-100%)', 'warning');
       setButtonLoading(saveBtn, false);
       return;
     }
@@ -1740,6 +1740,11 @@ async function viewFarmerTransaction(id) {
                     <td style="padding: 8px; text-align: right;">Rs.${item.subtotal.toFixed(2)}</td>
                   </tr>
                 `).join('')}
+                <tr style="border-top: 2px solid #000; font-weight: bold; background: #f5f5f5;">
+                  <td style="padding: 8px;">Total Weight</td>
+                  <td style="padding: 8px; text-align: right;">${formatWeight(txn.total_weight_kg)}</td>
+                  <td colspan="2"></td>
+                </tr>
               </tbody>
             </table>
           ` : `
