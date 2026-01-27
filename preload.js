@@ -54,6 +54,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   searchCustomers: (query) => ipcRenderer.invoke('db:searchCustomers', query),
   backupDatabase: () => ipcRenderer.invoke('db:backup'),
 
+  // TRANSITIONAL: Ledger operations
+  addLedgerEntry: (entry) => ipcRenderer.invoke('db:addLedgerEntry', entry),
+  getLedgerEntries: (entityType, entityId, options) => ipcRenderer.invoke('db:getLedgerEntries', entityType, entityId, options),
+  getAllLedgerEntries: (options) => ipcRenderer.invoke('db:getAllLedgerEntries', options),
+  getLedgerEntryById: (id) => ipcRenderer.invoke('db:getLedgerEntryById', id),
+
+  // Account History (unified view with manual entries)
+  getCustomerAccountHistory: (customerId) => ipcRenderer.invoke('db:getCustomerAccountHistory', customerId),
+  getFarmerAccountHistory: (farmerId) => ipcRenderer.invoke('db:getFarmerAccountHistory', farmerId),
+
   // PDF operations
   savePDF: (data) => ipcRenderer.invoke('print:savePDF', data),
 });

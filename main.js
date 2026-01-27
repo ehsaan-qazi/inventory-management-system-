@@ -82,6 +82,7 @@ function createWindow() {
 app.whenReady().then(() => {
   // Initialize database
   db = new FishMarketDB();
+  db.useLedgerBalance = true;
   console.log('Database initialized');
 
   // Set up IPC handlers
@@ -240,6 +241,32 @@ function setupIPCHandlers() {
   // Utility operations
   ipcMain.handle('db:backup', async () => {
     return db.backup();
+  });
+
+  // TRANSITIONAL: Ledger operations
+  ipcMain.handle('db:addLedgerEntry', async (event, entry) => {
+    return db.addLedgerEntry(entry);
+  });
+
+  ipcMain.handle('db:getLedgerEntries', async (event, entityType, entityId, options) => {
+    return db.getLedgerEntries(entityType, entityId, options || {});
+  });
+
+  ipcMain.handle('db:getAllLedgerEntries', async (event, options) => {
+    return db.getAllLedgerEntries(options || {});
+  });
+
+  ipcMain.handle('db:getLedgerEntryById', async (event, id) => {
+    return db.getLedgerEntryById(id);
+  });
+
+  // Account History (unified view with manual entries)
+  ipcMain.handle('db:getCustomerAccountHistory', async (event, customerId) => {
+    return db.getCustomerAccountHistory(customerId);
+  });
+
+  ipcMain.handle('db:getFarmerAccountHistory', async (event, farmerId) => {
+    return db.getFarmerAccountHistory(farmerId);
   });
 
   // PDF Generation

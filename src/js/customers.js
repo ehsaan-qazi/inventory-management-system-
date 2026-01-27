@@ -437,28 +437,48 @@
       const createdDate = new Date(customer.created_at);
       document.getElementById('viewCustomerDate').textContent = createdDate.toLocaleDateString('en-IN');
 
-      // Load transaction history
-      const transactions = await window.electronAPI.getTransactionsByCustomer(id);
+      // Load unified account history (fish transactions + manual entries)
+      const history = await window.electronAPI.getCustomerAccountHistory(id);
       const transactionsBody = document.getElementById('customerTransactions');
 
-      if (transactions.length === 0) {
+      if (history.length === 0) {
         transactionsBody.innerHTML = '<tr><td colspan="5" class="no-data">No transactions yet</td></tr>';
       } else {
-        transactionsBody.innerHTML = transactions.map(txn => {
-          const date = new Date(txn.transaction_date);
-          return `
-          <tr class="transaction-row-clickable" onclick="viewTransactionReceipt(${txn.id})">
-            <td>${date.toLocaleDateString('en-IN')}</td>
-            <td>Rs.${txn.total_amount.toFixed(2)}</td>
-            <td>Rs.${txn.paid_amount.toFixed(2)}</td>
-            <td><span class="status-badge ${txn.payment_status}">${txn.payment_status}</span></td>
-            <td class="action-buttons">
-              <button class="action-btn edit" onclick="event.stopPropagation(); editTransactionFromCustomer(${txn.id})" title="Edit">
-                <img src="../assets/edit.png" alt="Edit" style="width: 16px; height: 16px;">
-              </button>
-            </td>
-          </tr>
-        `;
+        transactionsBody.innerHTML = history.map(record => {
+          const date = new Date(record.entry_date);
+
+          // Check if this is a manual entry or fish transaction
+          if (record.record_type === 'manual_credit' || record.record_type === 'manual_debit') {
+            // Manual entry row
+            const typeLabel = record.record_type === 'manual_credit' ? 'Manual Credit' : 'Manual Debit';
+            const typeClass = record.record_type === 'manual_credit' ? 'partial' : 'paid';
+            return `
+            <tr class="transaction-row-clickable" onclick="viewManualEntryReceipt(${record.id}, '${customer.name}', ${customer.balance})">
+              <td>${date.toLocaleDateString('en-IN')}</td>
+              <td><span class="status-badge ${typeClass}">${typeLabel}</span></td>
+              <td>Rs.${record.amount.toFixed(2)}</td>
+              <td>${record.description || '-'}</td>
+              <td class="action-buttons">
+                <span style="color: var(--text-secondary); font-size: 12px;">View</span>
+              </td>
+            </tr>
+          `;
+          } else {
+            // Fish transaction row
+            return `
+            <tr class="transaction-row-clickable" onclick="viewTransactionReceipt(${record.id})">
+              <td>${date.toLocaleDateString('en-IN')}</td>
+              <td><span class="status-badge active">Sale</span></td>
+              <td>Rs.${record.amount.toFixed(2)}</td>
+              <td><span class="status-badge ${record.payment_status}">${record.payment_status}</span></td>
+              <td class="action-buttons">
+                <button class="action-btn edit" onclick="event.stopPropagation(); editTransactionFromCustomer(${record.id})" title="Edit">
+                  <img src="../assets/edit.png" alt="Edit" style="width: 16px; height: 16px;">
+                </button>
+              </td>
+            </tr>
+          `;
+          }
         }).join('');
       }
 
@@ -672,12 +692,12 @@
     printWindow.print();
   }
 
-// Save receipt as PDF
-async function saveReceiptAsPDF() {
-  try {
-    const receiptContent = document.getElementById('receiptContent').innerHTML;
-    
-    const html = `
+  // Save receipt as PDF
+  async function saveReceiptAsPDF() {
+    try {
+      const receiptContent = document.getElementById('receiptContent').innerHTML;
+
+      const html = `
       <!DOCTYPE html>
       <html>
       <head>
@@ -694,21 +714,21 @@ async function saveReceiptAsPDF() {
       </html>
     `;
 
-    const now = new Date();
-    const filename = `customer_receipt_${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}.pdf`;
+      const now = new Date();
+      const filename = `customer_receipt_${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}.pdf`;
 
-    const result = await window.electronAPI.savePDF({ html, filename });
+      const result = await window.electronAPI.savePDF({ html, filename });
 
-    if (result.success) {
-      showAlert('PDF saved successfully!', 'success');
-    } else if (result.message !== 'Save cancelled') {
-      showAlert('Failed to save PDF: ' + result.message, 'error');
+      if (result.success) {
+        showAlert('PDF saved successfully!', 'success');
+      } else if (result.message !== 'Save cancelled') {
+        showAlert('Failed to save PDF: ' + result.message, 'error');
+      }
+    } catch (error) {
+      console.error('Error saving PDF:', error);
+      showAlert('Failed to save PDF: ' + error.message, 'error');
     }
-  } catch (error) {
-    console.error('Error saving PDF:', error);
-    showAlert('Failed to save PDF: ' + error.message, 'error');
   }
-}
 
   // Helper function to format weight
   function formatWeight(totalKg) {
@@ -722,6 +742,66 @@ async function saveReceiptAsPDF() {
       return `${maunds} Maund`;
     }
     return `${maunds} Maund ${kg.toFixed(2)} KG`;
+  }
+
+  // View manual entry receipt
+  async function viewManualEntryReceipt(entryId, entityName, entityBalance) {
+    try {
+      const entry = await window.electronAPI.getLedgerEntryById(entryId);
+      if (!entry) {
+        showAlert('Entry not found', 'error');
+        return;
+      }
+
+      const entryDate = new Date(entry.entry_date || entry.created_at);
+      const receiptContent = document.getElementById('receiptContent');
+      const typeLabel = entry.entry_type === 'CREDIT' ? 'Credit' : 'Debit';
+      const bgColor = entry.entry_type === 'CREDIT' ? '#fff3cd' : '#d4edda';
+
+      receiptContent.innerHTML = `
+        <div style="font-family: monospace; padding: 20px; background: white;">
+          <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px;">
+            <h2 style="margin: 0;">FishMarket</h2>
+            <p style="margin: 5px 0;">Manual Entry Receipt</p>
+          </div>
+          
+          <div style="margin-bottom: 20px;">
+            <p><strong>Receipt #:</strong> ME-${entry.id}</p>
+            <p><strong>Date:</strong> ${entryDate.toLocaleDateString('en-IN')}</p>
+            <p><strong>Customer:</strong> ${entityName}</p>
+          </div>
+
+          <div style="background: ${bgColor}; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid ${entry.entry_type === 'CREDIT' ? '#ffc107' : '#28a745'};">
+            <p style="font-size: 18px; margin: 0;">
+              <strong>Type:</strong> Manual ${typeLabel}
+            </p>
+            <p style="font-size: 28px; margin: 15px 0; font-weight: bold; color: ${entry.entry_type === 'CREDIT' ? '#856404' : '#155724'};">
+              Rs.${entry.amount.toLocaleString()}
+            </p>
+          </div>
+
+          <div style="margin-bottom: 20px;">
+            <p><strong>Description:</strong></p>
+            <p style="padding: 15px; background: #f5f5f5; border-radius: 8px; margin: 5px 0;">${entry.description || 'No description provided'}</p>
+          </div>
+
+          <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <p style="margin: 0; font-size: 16px;"><strong>Resulting Balance:</strong> Rs.${Math.abs(entityBalance).toLocaleString()}
+              ${entityBalance < 0 ? ' (Outstanding)' : entityBalance > 0 ? ' (Prepaid)' : ' (Balanced)'}
+            </p>
+          </div>
+
+          <div style="margin-top: 30px; text-align: center; border-top: 2px solid #000; padding-top: 10px;">
+            <p style="margin: 0;">Thank you for your business!</p>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('viewReceiptModal').classList.add('active');
+    } catch (error) {
+      console.error('Error viewing manual entry:', error);
+      showAlert('Failed to load entry receipt', 'error');
+    }
   }
 
   // Expose functions needed by HTML onclick handlers
@@ -743,6 +823,7 @@ async function saveReceiptAsPDF() {
   window.closeViewReceiptModal = closeViewReceiptModal;
   window.printReceipt = printReceipt;
   window.saveReceiptAsPDF = saveReceiptAsPDF;
+  window.viewManualEntryReceipt = viewManualEntryReceipt;
 
 })(); // End of IIFE (Issue 12)
 

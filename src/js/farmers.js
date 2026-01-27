@@ -1,12 +1,12 @@
 // Farmers page functionality
-(function() {
+(function () {
   'use strict';
-  
+
   let allFarmers = [];
   let currentEditingId = null;
   let searchTimeout;
   let suggestionsDiv;
-  
+
   // Pagination state
   let currentPage = 1;
   let pageSize = 50;
@@ -18,103 +18,103 @@
     checkURLParameters();
     setupLiveSearch();
   });
-  
+
   // Clean up on page unload
   window.addEventListener('beforeunload', () => {
     if (searchTimeout) clearTimeout(searchTimeout);
   });
 
-// Load all farmers with pagination
-async function loadFarmers() {
-  try {
-    const offset = (currentPage - 1) * pageSize;
-    const result = await window.electronAPI.getFarmers({
-      limit: pageSize,
-      offset: offset
-    });
-    
-    // Handle paginated response
-    if (result.data) {
-      allFarmers = result.data;
-      totalFarmers = result.total;
-      totalPages = Math.ceil(result.total / pageSize);
-    } else {
-      // Fallback for non-paginated response
-      allFarmers = result;
-      totalFarmers = result.length;
-      totalPages = 1;
+  // Load all farmers with pagination
+  async function loadFarmers() {
+    try {
+      const offset = (currentPage - 1) * pageSize;
+      const result = await window.electronAPI.getFarmers({
+        limit: pageSize,
+        offset: offset
+      });
+
+      // Handle paginated response
+      if (result.data) {
+        allFarmers = result.data;
+        totalFarmers = result.total;
+        totalPages = Math.ceil(result.total / pageSize);
+      } else {
+        // Fallback for non-paginated response
+        allFarmers = result;
+        totalFarmers = result.length;
+        totalPages = 1;
+      }
+
+      displayFarmers(allFarmers);
+      updatePaginationUI();
+    } catch (error) {
+      console.error('Error loading farmers:', error);
+      showAlert('Failed to load farmers', 'error');
     }
-    
-    displayFarmers(allFarmers);
-    updatePaginationUI();
-  } catch (error) {
-    console.error('Error loading farmers:', error);
-    showAlert('Failed to load farmers', 'error');
   }
-}
 
-// Update pagination UI
-function updatePaginationUI() {
-  const prevBtn = document.getElementById('prevBtn');
-  const nextBtn = document.getElementById('nextBtn');
-  const pageInfo = document.getElementById('pageInfo');
-  
-  if (prevBtn && nextBtn && pageInfo) {
-    prevBtn.disabled = currentPage === 1;
-    nextBtn.disabled = currentPage >= totalPages;
-    pageInfo.textContent = `Page ${currentPage} of ${totalPages} (${totalFarmers} farmers)`;
+  // Update pagination UI
+  function updatePaginationUI() {
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const pageInfo = document.getElementById('pageInfo');
+
+    if (prevBtn && nextBtn && pageInfo) {
+      prevBtn.disabled = currentPage === 1;
+      nextBtn.disabled = currentPage >= totalPages;
+      pageInfo.textContent = `Page ${currentPage} of ${totalPages} (${totalFarmers} farmers)`;
+    }
   }
-}
 
-// Pagination controls
-function nextPage() {
-  if (currentPage < totalPages) {
-    currentPage++;
+  // Pagination controls
+  function nextPage() {
+    if (currentPage < totalPages) {
+      currentPage++;
+      loadFarmers();
+    }
+  }
+
+  function previousPage() {
+    if (currentPage > 1) {
+      currentPage--;
+      loadFarmers();
+    }
+  }
+
+  function changePageSize() {
+    pageSize = parseInt(document.getElementById('pageSize').value);
+    currentPage = 1; // Reset to first page
     loadFarmers();
   }
-}
 
-function previousPage() {
-  if (currentPage > 1) {
-    currentPage--;
-    loadFarmers();
-  }
-}
+  // Display farmers in table
+  function displayFarmers(farmers) {
+    const tbody = document.getElementById('farmersTable');
 
-function changePageSize() {
-  pageSize = parseInt(document.getElementById('pageSize').value);
-  currentPage = 1; // Reset to first page
-  loadFarmers();
-}
-
-// Display farmers in table
-function displayFarmers(farmers) {
-  const tbody = document.getElementById('farmersTable');
-  
-  if (farmers.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" class="no-data">No farmers found. Add your first farmer!</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = farmers.map(farmer => {
-    const balance = parseFloat(farmer.balance);
-    let balanceClass = 'zero';
-    let statusText = 'Balanced';
-    let statusClass = 'active';
-
-    if (balance < 0) {
-      // Negative balance = we owe the farmer
-      balanceClass = 'outstanding';
-      statusText = 'We Owe';
-      statusClass = 'unpaid';
-    } else if (balance > 0) {
-      // Positive balance = farmer has credit/prepaid
-      balanceClass = 'prepaid';
-      statusText = 'Credit';
-      statusClass = 'paid';
+    if (farmers.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="no-data">No farmers found. Add your first farmer!</td></tr>';
+      return;
     }
 
-    return `
+    tbody.innerHTML = farmers.map(farmer => {
+      const balance = parseFloat(farmer.balance);
+      let balanceClass = 'zero';
+      let statusText = 'Balanced';
+      let statusClass = 'active';
+
+      if (balance < 0) {
+        // Negative balance = we owe the farmer
+        balanceClass = 'outstanding';
+        statusText = 'We Owe';
+        statusClass = 'unpaid';
+      } else if (balance > 0) {
+        // Positive balance = farmer has credit/prepaid
+        balanceClass = 'prepaid';
+        statusText = 'Credit';
+        statusClass = 'paid';
+      }
+
+      return `
       <tr>
         <td>#${farmer.id}</td>
         <td>${farmer.name}</td>
@@ -129,92 +129,92 @@ function displayFarmers(farmers) {
         </td>
       </tr>
     `;
-  }).join('');
-}
+    }).join('');
+  }
 
-// Setup live search with autocomplete
-function setupLiveSearch() {
-  const searchInput = document.getElementById('searchInput');
-  const searchBar = searchInput.closest('.search-bar');
-  
-  // Create suggestions dropdown
-  suggestionsDiv = document.createElement('div');
-  suggestionsDiv.className = 'search-suggestions';
-  searchBar.appendChild(suggestionsDiv);
-  
-  // Live search on input
-  searchInput.addEventListener('input', (e) => {
-    clearTimeout(searchTimeout);
-    const query = e.target.value.trim();
-    
-    if (!query) {
+  // Setup live search with autocomplete
+  function setupLiveSearch() {
+    const searchInput = document.getElementById('searchInput');
+    const searchBar = searchInput.closest('.search-bar');
+
+    // Create suggestions dropdown
+    suggestionsDiv = document.createElement('div');
+    suggestionsDiv.className = 'search-suggestions';
+    searchBar.appendChild(suggestionsDiv);
+
+    // Live search on input
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(searchTimeout);
+      const query = e.target.value.trim();
+
+      if (!query) {
+        suggestionsDiv.style.display = 'none';
+        displayFarmers(allFarmers);
+        return;
+      }
+
+      // Debounce - wait 300ms after user stops typing
+      searchTimeout = setTimeout(async () => {
+        await performLiveSearch(query);
+      }, 300);
+    });
+
+    // Hide suggestions when clicking outside (use capture phase to avoid conflicts)
+    document.addEventListener('click', (e) => {
+      if (!searchBar.contains(e.target) && !suggestionsDiv.contains(e.target)) {
+        suggestionsDiv.style.display = 'none';
+      }
+    }, true); // Use capture phase
+  }
+
+  // Perform live search and show suggestions
+  async function performLiveSearch(query) {
+    try {
+      const results = await window.electronAPI.searchFarmers(query);
+      displayFarmers(results);
+      displaySuggestions(results, query);
+    } catch (error) {
+      console.error('Error searching farmers:', error);
+      showAlert('Error searching farmers', 'error');
+    }
+  }
+
+  // Display search suggestions
+  function displaySuggestions(results, query) {
+    if (results.length === 0) {
       suggestionsDiv.style.display = 'none';
-      displayFarmers(allFarmers);
       return;
     }
-    
-    // Debounce - wait 300ms after user stops typing
-    searchTimeout = setTimeout(async () => {
-      await performLiveSearch(query);
-    }, 300);
-  });
-  
-  // Hide suggestions when clicking outside (use capture phase to avoid conflicts)
-  document.addEventListener('click', (e) => {
-    if (!searchBar.contains(e.target) && !suggestionsDiv.contains(e.target)) {
-      suggestionsDiv.style.display = 'none';
-    }
-  }, true); // Use capture phase
-}
 
-// Perform live search and show suggestions
-async function performLiveSearch(query) {
-  try {
-    const results = await window.electronAPI.searchFarmers(query);
-    displayFarmers(results);
-    displaySuggestions(results, query);
-  } catch (error) {
-    console.error('Error searching farmers:', error);
-    showAlert('Error searching farmers', 'error');
-  }
-}
+    const queryLower = query.toLowerCase();
 
-// Display search suggestions
-function displaySuggestions(results, query) {
-  if (results.length === 0) {
-    suggestionsDiv.style.display = 'none';
-    return;
-  }
-  
-  const queryLower = query.toLowerCase();
-  
-  suggestionsDiv.innerHTML = results.slice(0, 5).map(farmer => {
-    const balance = parseFloat(farmer.balance);
-    let balanceColor = '#666';
-    let balanceText = 'Balanced';
-    
-    if (balance < 0) {
-      balanceColor = '#d32f2f';
-      balanceText = `We Owe: Rs.${Math.abs(balance).toFixed(2)}`;
-    } else if (balance > 0) {
-      balanceColor = '#388e3c';
-      balanceText = `Credit: Rs.${balance.toFixed(2)}`;
-    } else {
-      balanceText = 'Balance: Rs.0.00';
-    }
-    
-    // Highlight matching text
-    const highlightText = (text, query) => {
-      if (!text) return '';
-      const index = text.toLowerCase().indexOf(queryLower);
-      if (index === -1) return text;
-      const before = text.substring(0, index);
-      const match = text.substring(index, index + query.length);
-      const after = text.substring(index + query.length);
-      return `${before}<span class="suggestion-highlight">${match}</span>${after}`;
-    };
-    
-    return `
+    suggestionsDiv.innerHTML = results.slice(0, 5).map(farmer => {
+      const balance = parseFloat(farmer.balance);
+      let balanceColor = '#666';
+      let balanceText = 'Balanced';
+
+      if (balance < 0) {
+        balanceColor = '#d32f2f';
+        balanceText = `We Owe: Rs.${Math.abs(balance).toFixed(2)}`;
+      } else if (balance > 0) {
+        balanceColor = '#388e3c';
+        balanceText = `Credit: Rs.${balance.toFixed(2)}`;
+      } else {
+        balanceText = 'Balance: Rs.0.00';
+      }
+
+      // Highlight matching text
+      const highlightText = (text, query) => {
+        if (!text) return '';
+        const index = text.toLowerCase().indexOf(queryLower);
+        if (index === -1) return text;
+        const before = text.substring(0, index);
+        const match = text.substring(index, index + query.length);
+        const after = text.substring(index + query.length);
+        return `${before}<span class="suggestion-highlight">${match}</span>${after}`;
+      };
+
+      return `
       <div class="suggestion-item" onclick="selectFarmerFromSuggestion(${farmer.id})">
         <div class="suggestion-name">${highlightText(farmer.name, query)}</div>
         <div class="suggestion-details">
@@ -223,351 +223,371 @@ function displaySuggestions(results, query) {
         </div>
       </div>
     `;
-  }).join('');
-  
-  suggestionsDiv.style.display = 'block';
-}
+    }).join('');
 
-// Select farmer from suggestion
-function selectFarmerFromSuggestion(farmerId) {
-  suggestionsDiv.style.display = 'none';
-  viewFarmer(farmerId);
-}
+    suggestionsDiv.style.display = 'block';
+  }
 
-// Search farmers (legacy - for button click)
-async function searchFarmers() {
-  const searchInput = document.getElementById('searchInput');
-  const query = searchInput.value.trim();
-  
-  if (!query) {
-    displayFarmers(allFarmers);
+  // Select farmer from suggestion
+  function selectFarmerFromSuggestion(farmerId) {
     suggestionsDiv.style.display = 'none';
-    return;
+    viewFarmer(farmerId);
   }
 
-  await performLiveSearch(query);
-}
+  // Search farmers (legacy - for button click)
+  async function searchFarmers() {
+    const searchInput = document.getElementById('searchInput');
+    const query = searchInput.value.trim();
 
-// Check URL parameters for search or specific farmer
-function checkURLParameters() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const searchQuery = urlParams.get('search');
-  const farmerId = urlParams.get('id');
-  const filter = urlParams.get('filter');
-
-  if (searchQuery) {
-    document.getElementById('searchInput').value = searchQuery;
-    searchFarmers();
-  } else if (farmerId) {
-    viewFarmer(parseInt(farmerId));
-  } else if (filter === 'outstanding') {
-    // Filter to show only farmers we owe money to
-    const outstandingFarmers = allFarmers.filter(f => f.balance < 0);
-    displayFarmers(outstandingFarmers);
-  }
-}
-
-// Open add farmer modal
-function openAddFarmerModal() {
-  currentEditingId = null;
-  document.getElementById('modalTitle').textContent = 'Add Farmer';
-  document.getElementById('farmerForm').reset();
-  document.getElementById('farmerId').value = '';
-  document.getElementById('farmerBalance').value = '0';
-  document.getElementById('farmerModal').classList.add('active');
-}
-
-// Open edit farmer modal
-async function editFarmer(id) {
-  try {
-    const farmer = await window.electronAPI.getFarmerById(id);
-    if (!farmer) {
-      showAlert('Farmer not found', 'error');
+    if (!query) {
+      displayFarmers(allFarmers);
+      suggestionsDiv.style.display = 'none';
       return;
     }
 
-    currentEditingId = id;
-    document.getElementById('modalTitle').textContent = 'Edit Farmer';
-    document.getElementById('farmerId').value = farmer.id;
-    document.getElementById('farmerName').value = farmer.name;
-    document.getElementById('farmerPhone').value = farmer.phone || '';
-    document.getElementById('farmerAddress').value = farmer.address || '';
-    document.getElementById('farmerBalance').value = farmer.balance;
-    document.getElementById('farmerBalance').disabled = true; // Can't edit balance directly
-    
+    await performLiveSearch(query);
+  }
+
+  // Check URL parameters for search or specific farmer
+  function checkURLParameters() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const searchQuery = urlParams.get('search');
+    const farmerId = urlParams.get('id');
+    const filter = urlParams.get('filter');
+
+    if (searchQuery) {
+      document.getElementById('searchInput').value = searchQuery;
+      searchFarmers();
+    } else if (farmerId) {
+      viewFarmer(parseInt(farmerId));
+    } else if (filter === 'outstanding') {
+      // Filter to show only farmers we owe money to
+      const outstandingFarmers = allFarmers.filter(f => f.balance < 0);
+      displayFarmers(outstandingFarmers);
+    }
+  }
+
+  // Open add farmer modal
+  function openAddFarmerModal() {
+    currentEditingId = null;
+    document.getElementById('modalTitle').textContent = 'Add Farmer';
+    document.getElementById('farmerForm').reset();
+    document.getElementById('farmerId').value = '';
+    document.getElementById('farmerBalance').value = '0';
     document.getElementById('farmerModal').classList.add('active');
-  } catch (error) {
-    console.error('Error loading farmer:', error);
-    showAlert('Failed to load farmer details', 'error');
   }
-}
 
-// Close farmer modal
-function closeFarmerModal() {
-  document.getElementById('farmerModal').classList.remove('active');
-  document.getElementById('farmerForm').reset();
-  document.getElementById('farmerBalance').disabled = false;
-  currentEditingId = null;
-}
-
-// Save farmer (add or update)
-async function saveFarmer(event) {
-  // Get button for loading state
-  const saveBtn = event ? event.target : document.querySelector('.btn-primary');
-  setButtonLoading(saveBtn, true);
-  
-  try {
-    const name = document.getElementById('farmerName').value.trim();
-    const phone = document.getElementById('farmerPhone').value.trim();
-    const address = document.getElementById('farmerAddress').value.trim();
-    const balance = parseFloat(document.getElementById('farmerBalance').value) || 0;
-
-    // Validate farmer name
-    const nameValidation = Validators.customerName(name); // Reuse customer name validator
-    if (!nameValidation.valid) {
-      showAlert(nameValidation.error, 'warning');
-      return;
-    }
-
-    // Validate phone number
-    const phoneValidation = Validators.phoneNumber(phone);
-    if (!phoneValidation.valid) {
-      showAlert(phoneValidation.error, 'warning');
-      return;
-    }
-
-    // Validate address
-    const addressValidation = Validators.address(address);
-    if (!addressValidation.valid) {
-      showAlert(addressValidation.error, 'warning');
-      return;
-    }
-
-    const farmerData = { 
-      name: nameValidation.value, 
-      phone: phoneValidation.value, 
-      address: addressValidation.value 
-    };
-
-    if (currentEditingId) {
-      // Update existing farmer
-      await window.electronAPI.updateFarmer(currentEditingId, farmerData);
-      showAlert('Farmer updated successfully', 'success');
-    } else {
-      // Add new farmer
-      farmerData.balance = roundMoney(balance);
-      await window.electronAPI.addFarmer(farmerData);
-      showAlert('Farmer added successfully', 'success');
-    }
-
-    closeFarmerModal();
-    await loadFarmers();
-  } catch (error) {
-    // Better error messages
-    let errorMessage = 'Failed to save farmer';
-    if (error.message) {
-      if (error.message.includes('already exists')) {
-        errorMessage = error.message;
-      } else if (error.message.includes('UNIQUE constraint')) {
-        errorMessage = 'A farmer with this name or phone already exists';
-      } else {
-        errorMessage = `Error: ${error.message}`;
+  // Open edit farmer modal
+  async function editFarmer(id) {
+    try {
+      const farmer = await window.electronAPI.getFarmerById(id);
+      if (!farmer) {
+        showAlert('Farmer not found', 'error');
+        return;
       }
+
+      currentEditingId = id;
+      document.getElementById('modalTitle').textContent = 'Edit Farmer';
+      document.getElementById('farmerId').value = farmer.id;
+      document.getElementById('farmerName').value = farmer.name;
+      document.getElementById('farmerPhone').value = farmer.phone || '';
+      document.getElementById('farmerAddress').value = farmer.address || '';
+      document.getElementById('farmerBalance').value = farmer.balance;
+      document.getElementById('farmerBalance').disabled = true; // Can't edit balance directly
+
+      document.getElementById('farmerModal').classList.add('active');
+    } catch (error) {
+      console.error('Error loading farmer:', error);
+      showAlert('Failed to load farmer details', 'error');
     }
-    showAlert(errorMessage, 'error');
-  } finally {
-    setButtonLoading(saveBtn, false);
   }
-}
 
-// Make function available globally for onclick
-window.saveFarmer = saveFarmer;
-
-// Delete farmer
-async function deleteFarmer(id) {
-  const farmer = allFarmers.find(f => f.id === id);
-  if (!farmer) return;
-
-  const confirmDelete = confirm(
-    `Are you sure you want to delete "${farmer.name}"?\n\nThis will also delete all associated transactions. This action cannot be undone.`
-  );
-
-  if (!confirmDelete) return;
-
-  try {
-    await window.electronAPI.deleteFarmer(id);
-    showAlert('Farmer deleted successfully', 'success');
-    await loadFarmers();
-  } catch (error) {
-    console.error('Error deleting farmer:', error);
-    showAlert('Failed to delete farmer', 'error');
+  // Close farmer modal
+  function closeFarmerModal() {
+    document.getElementById('farmerModal').classList.remove('active');
+    document.getElementById('farmerForm').reset();
+    document.getElementById('farmerBalance').disabled = false;
+    currentEditingId = null;
   }
-}
 
-// View farmer details
-async function viewFarmer(id) {
-  try {
-    const farmer = await window.electronAPI.getFarmerById(id);
-    if (!farmer) {
-      showAlert('Farmer not found', 'error');
-      return;
+  // Save farmer (add or update)
+  async function saveFarmer(event) {
+    // Get button for loading state
+    const saveBtn = event ? event.target : document.querySelector('.btn-primary');
+    setButtonLoading(saveBtn, true);
+
+    try {
+      const name = document.getElementById('farmerName').value.trim();
+      const phone = document.getElementById('farmerPhone').value.trim();
+      const address = document.getElementById('farmerAddress').value.trim();
+      const balance = parseFloat(document.getElementById('farmerBalance').value) || 0;
+
+      // Validate farmer name
+      const nameValidation = Validators.customerName(name); // Reuse customer name validator
+      if (!nameValidation.valid) {
+        showAlert(nameValidation.error, 'warning');
+        return;
+      }
+
+      // Validate phone number
+      const phoneValidation = Validators.phoneNumber(phone);
+      if (!phoneValidation.valid) {
+        showAlert(phoneValidation.error, 'warning');
+        return;
+      }
+
+      // Validate address
+      const addressValidation = Validators.address(address);
+      if (!addressValidation.valid) {
+        showAlert(addressValidation.error, 'warning');
+        return;
+      }
+
+      const farmerData = {
+        name: nameValidation.value,
+        phone: phoneValidation.value,
+        address: addressValidation.value
+      };
+
+      if (currentEditingId) {
+        // Update existing farmer
+        await window.electronAPI.updateFarmer(currentEditingId, farmerData);
+        showAlert('Farmer updated successfully', 'success');
+      } else {
+        // Add new farmer
+        farmerData.balance = roundMoney(balance);
+        await window.electronAPI.addFarmer(farmerData);
+        showAlert('Farmer added successfully', 'success');
+      }
+
+      closeFarmerModal();
+      await loadFarmers();
+    } catch (error) {
+      // Better error messages
+      let errorMessage = 'Failed to save farmer';
+      if (error.message) {
+        if (error.message.includes('already exists')) {
+          errorMessage = error.message;
+        } else if (error.message.includes('UNIQUE constraint')) {
+          errorMessage = 'A farmer with this name or phone already exists';
+        } else {
+          errorMessage = `Error: ${error.message}`;
+        }
+      }
+      showAlert(errorMessage, 'error');
+    } finally {
+      setButtonLoading(saveBtn, false);
     }
-
-    // Populate farmer details
-    document.getElementById('viewFarmerName').textContent = farmer.name;
-    document.getElementById('viewFarmerPhone').textContent = farmer.phone || 'N/A';
-    document.getElementById('viewFarmerAddress').textContent = farmer.address || 'N/A';
-    
-    const balance = parseFloat(farmer.balance);
-    let balanceText = `Rs.${Math.abs(balance).toFixed(2)}`;
-    let balanceClass = 'zero';
-    
-    if (balance < 0) {
-      balanceClass = 'outstanding';
-      balanceText += ' (We Owe)';
-    } else if (balance > 0) {
-      balanceClass = 'prepaid';
-      balanceText += ' (Credit)';
-    } else {
-      balanceText += ' (Balanced)';
-    }
-    
-    const balanceSpan = document.getElementById('viewFarmerBalance');
-    balanceSpan.textContent = balanceText;
-    balanceSpan.className = `balance ${balanceClass}`;
-    
-    const createdDate = new Date(farmer.created_at);
-    document.getElementById('viewFarmerDate').textContent = createdDate.toLocaleDateString('en-IN');
-
-    // Load transaction history
-    const transactions = await window.electronAPI.getTransactionsByFarmer(id);
-    const transactionsBody = document.getElementById('farmerTransactions');
-    
-    if (transactions.length === 0) {
-      transactionsBody.innerHTML = '<tr><td colspan="5" class="no-data">No transactions yet</td></tr>';
-    } else {
-      transactionsBody.innerHTML = transactions.map(txn => {
-        const date = new Date(txn.transaction_date);
-        return `
-          <tr class="transaction-row-clickable" onclick="viewFarmerTransactionReceipt(${txn.id})">
-            <td>${date.toLocaleDateString('en-IN')}</td>
-            <td>${txn.fish_name}</td>
-            <td>Rs.${txn.total_amount.toFixed(2)}</td>
-            <td>Rs.${txn.commission_amount.toFixed(2)}</td>
-            <td class="action-buttons">
-              <button class="action-btn edit" onclick="event.stopPropagation(); editFarmerTransactionFromFarmer(${txn.id})" title="Edit">
-                <img src="../assets/edit.png" alt="Edit" style="width: 16px; height: 16px;">
-              </button>
-            </td>
-          </tr>
-        `;
-      }).join('');
-    }
-
-    document.getElementById('viewFarmerModal').classList.add('active');
-  } catch (error) {
-    console.error('Error viewing farmer:', error);
-    showAlert('Failed to load farmer details', 'error');
   }
-}
 
-// Close view farmer modal
-function closeViewFarmerModal() {
-  document.getElementById('viewFarmerModal').classList.remove('active');
-}
+  // Make function available globally for onclick
+  window.saveFarmer = saveFarmer;
 
-// Show alert message
-function showAlert(message, type = 'info') {
-  const alertContainer = document.getElementById('alertContainer');
-  const alert = document.createElement('div');
-  alert.className = `alert alert-${type}`;
-  alert.textContent = message;
-  
-  alertContainer.appendChild(alert);
-  
-  setTimeout(() => {
-    alert.remove();
-  }, 5000);
-}
+  // Delete farmer
+  async function deleteFarmer(id) {
+    const farmer = allFarmers.find(f => f.id === id);
+    if (!farmer) return;
 
-// Edit farmer transaction from farmer modal
-let editingFarmerTransactionId = null;
-let editingFarmerId = null;
+    const confirmDelete = confirm(
+      `Are you sure you want to delete "${farmer.name}"?\n\nThis will also delete all associated transactions. This action cannot be undone.`
+    );
 
-async function editFarmerTransactionFromFarmer(txnId) {
-  try {
-    const txn = await window.electronAPI.getFarmerTransactionById(txnId);
-    if (!txn) {
-      showAlert('Transaction not found', 'error');
-      return;
+    if (!confirmDelete) return;
+
+    try {
+      await window.electronAPI.deleteFarmer(id);
+      showAlert('Farmer deleted successfully', 'success');
+      await loadFarmers();
+    } catch (error) {
+      console.error('Error deleting farmer:', error);
+      showAlert('Failed to delete farmer', 'error');
     }
-    
-    editingFarmerTransactionId = txnId;
-    editingFarmerId = txn.farmer_id;
-    
-    // Populate modal
-    document.getElementById('editFarmerTxnId').textContent = txn.id;
-    document.getElementById('editFarmerTxnName').value = txn.farmer_name;
-    document.getElementById('editFarmerNetAmount').value = formatMoney(txn.total_amount);
-    document.getElementById('editFarmerPaidAmount').value = txn.paid_amount.toFixed(2);
-    document.getElementById('editFarmerNotes').value = txn.notes || '';
-    
-    // Show modal
-    document.getElementById('editFarmerTransactionModal').classList.add('active');
-  } catch (error) {
-    console.error('Error loading farmer transaction:', error);
-    showAlert('Failed to load transaction details', 'error');
   }
-}
 
-function closeEditFarmerTransactionModal() {
-  document.getElementById('editFarmerTransactionModal').classList.remove('active');
-  editingFarmerTransactionId = null;
-  editingFarmerId = null;
-}
+  // View farmer details
+  async function viewFarmer(id) {
+    try {
+      const farmer = await window.electronAPI.getFarmerById(id);
+      if (!farmer) {
+        showAlert('Farmer not found', 'error');
+        return;
+      }
 
-async function saveEditedFarmerTransaction() {
-  if (!editingFarmerTransactionId) return;
-  
-  try {
-    const paidAmount = parseFloat(document.getElementById('editFarmerPaidAmount').value) || 0;
-    const notes = document.getElementById('editFarmerNotes').value.trim();
-    
-    await window.electronAPI.updateTransaction(editingFarmerTransactionId, {
-      paid_amount: paidAmount,
-      notes: notes
-    });
-    
-    showAlert('Transaction updated successfully', 'success');
-    closeEditFarmerTransactionModal();
-    
-    // Refresh farmer view
-    if (editingFarmerId) {
-      await viewFarmer(editingFarmerId);
+      // Populate farmer details
+      document.getElementById('viewFarmerName').textContent = farmer.name;
+      document.getElementById('viewFarmerPhone').textContent = farmer.phone || 'N/A';
+      document.getElementById('viewFarmerAddress').textContent = farmer.address || 'N/A';
+
+      const balance = parseFloat(farmer.balance);
+      let balanceText = `Rs.${Math.abs(balance).toFixed(2)}`;
+      let balanceClass = 'zero';
+
+      if (balance < 0) {
+        balanceClass = 'outstanding';
+        balanceText += ' (We Owe)';
+      } else if (balance > 0) {
+        balanceClass = 'prepaid';
+        balanceText += ' (Credit)';
+      } else {
+        balanceText += ' (Balanced)';
+      }
+
+      const balanceSpan = document.getElementById('viewFarmerBalance');
+      balanceSpan.textContent = balanceText;
+      balanceSpan.className = `balance ${balanceClass}`;
+
+      const createdDate = new Date(farmer.created_at);
+      document.getElementById('viewFarmerDate').textContent = createdDate.toLocaleDateString('en-IN');
+
+      // Load unified account history (fish purchases + manual entries)
+      const history = await window.electronAPI.getFarmerAccountHistory(id);
+      const transactionsBody = document.getElementById('farmerTransactions');
+
+      if (history.length === 0) {
+        transactionsBody.innerHTML = '<tr><td colspan="5" class="no-data">No transactions yet</td></tr>';
+      } else {
+        transactionsBody.innerHTML = history.map(record => {
+          const date = new Date(record.entry_date);
+
+          // Check if this is a manual entry or fish purchase
+          if (record.record_type === 'manual_credit' || record.record_type === 'manual_debit') {
+            // Manual entry row
+            const typeLabel = record.record_type === 'manual_credit' ? 'Manual Credit' : 'Manual Debit';
+            const typeClass = record.record_type === 'manual_credit' ? 'partial' : 'paid';
+            return `
+            <tr class="transaction-row-clickable" onclick="viewFarmerManualEntryReceipt(${record.id}, '${farmer.name}', ${farmer.balance})">
+              <td>${date.toLocaleDateString('en-IN')}</td>
+              <td><span class="status-badge ${typeClass}">${typeLabel}</span></td>
+              <td>Rs.${record.amount.toFixed(2)}</td>
+              <td>${record.description || '-'}</td>
+              <td class="action-buttons">
+                <span style="color: var(--text-secondary); font-size: 12px;">View</span>
+              </td>
+            </tr>
+          `;
+          } else {
+            // Fish purchase row
+            return `
+            <tr class="transaction-row-clickable" onclick="viewFarmerTransactionReceipt(${record.id})">
+              <td>${date.toLocaleDateString('en-IN')}</td>
+              <td><span class="status-badge active">Purchase</span></td>
+              <td>Rs.${record.amount.toFixed(2)}</td>
+              <td>${record.fish_name || 'N/A'}</td>
+              <td class="action-buttons">
+                <button class="action-btn edit" onclick="event.stopPropagation(); editFarmerTransactionFromFarmer(${record.id})" title="Edit">
+                  <img src="../assets/edit.png" alt="Edit" style="width: 16px; height: 16px;">
+                </button>
+              </td>
+            </tr>
+          `;
+          }
+        }).join('');
+      }
+
+      document.getElementById('viewFarmerModal').classList.add('active');
+    } catch (error) {
+      console.error('Error viewing farmer:', error);
+      showAlert('Failed to load farmer details', 'error');
     }
-  } catch (error) {
-    console.error('Error updating transaction:', error);
-    showAlert('Failed to update transaction', 'error');
   }
-}
 
-// View farmer transaction receipt
-async function viewFarmerTransactionReceipt(txnId) {
-  try {
-    const txn = await window.electronAPI.getFarmerTransactionById(txnId);
-    if (!txn) {
-      showAlert('Transaction not found', 'error');
-      return;
+  // Close view farmer modal
+  function closeViewFarmerModal() {
+    document.getElementById('viewFarmerModal').classList.remove('active');
+  }
+
+  // Show alert message
+  function showAlert(message, type = 'info') {
+    const alertContainer = document.getElementById('alertContainer');
+    const alert = document.createElement('div');
+    alert.className = `alert alert-${type}`;
+    alert.textContent = message;
+
+    alertContainer.appendChild(alert);
+
+    setTimeout(() => {
+      alert.remove();
+    }, 5000);
+  }
+
+  // Edit farmer transaction from farmer modal
+  let editingFarmerTransactionId = null;
+  let editingFarmerId = null;
+
+  async function editFarmerTransactionFromFarmer(txnId) {
+    try {
+      const txn = await window.electronAPI.getFarmerTransactionById(txnId);
+      if (!txn) {
+        showAlert('Transaction not found', 'error');
+        return;
+      }
+
+      editingFarmerTransactionId = txnId;
+      editingFarmerId = txn.farmer_id;
+
+      // Populate modal
+      document.getElementById('editFarmerTxnId').textContent = txn.id;
+      document.getElementById('editFarmerTxnName').value = txn.farmer_name;
+      document.getElementById('editFarmerNetAmount').value = formatMoney(txn.total_amount);
+      document.getElementById('editFarmerPaidAmount').value = txn.paid_amount.toFixed(2);
+      document.getElementById('editFarmerNotes').value = txn.notes || '';
+
+      // Show modal
+      document.getElementById('editFarmerTransactionModal').classList.add('active');
+    } catch (error) {
+      console.error('Error loading farmer transaction:', error);
+      showAlert('Failed to load transaction details', 'error');
     }
-    
-    const date = new Date(txn.transaction_date);
-    const receiptContent = document.getElementById('farmerReceiptContent');
-    
-    // Build fish items section - handle both multi-item and legacy single-item transactions
-    let fishItemsHtml = '';
-    if (txn.items && txn.items.length > 0) {
-      // Multi-item transaction
-      fishItemsHtml = `
+  }
+
+  function closeEditFarmerTransactionModal() {
+    document.getElementById('editFarmerTransactionModal').classList.remove('active');
+    editingFarmerTransactionId = null;
+    editingFarmerId = null;
+  }
+
+  async function saveEditedFarmerTransaction() {
+    if (!editingFarmerTransactionId) return;
+
+    try {
+      const paidAmount = parseFloat(document.getElementById('editFarmerPaidAmount').value) || 0;
+      const notes = document.getElementById('editFarmerNotes').value.trim();
+
+      await window.electronAPI.updateTransaction(editingFarmerTransactionId, {
+        paid_amount: paidAmount,
+        notes: notes
+      });
+
+      showAlert('Transaction updated successfully', 'success');
+      closeEditFarmerTransactionModal();
+
+      // Refresh farmer view
+      if (editingFarmerId) {
+        await viewFarmer(editingFarmerId);
+      }
+    } catch (error) {
+      console.error('Error updating transaction:', error);
+      showAlert('Failed to update transaction', 'error');
+    }
+  }
+
+  // View farmer transaction receipt
+  async function viewFarmerTransactionReceipt(txnId) {
+    try {
+      const txn = await window.electronAPI.getFarmerTransactionById(txnId);
+      if (!txn) {
+        showAlert('Transaction not found', 'error');
+        return;
+      }
+
+      const date = new Date(txn.transaction_date);
+      const receiptContent = document.getElementById('farmerReceiptContent');
+
+      // Build fish items section - handle both multi-item and legacy single-item transactions
+      let fishItemsHtml = '';
+      if (txn.items && txn.items.length > 0) {
+        // Multi-item transaction
+        fishItemsHtml = `
         <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
           <thead>
             <tr style="border-bottom: 2px solid #000;">
@@ -589,16 +609,16 @@ async function viewFarmerTransactionReceipt(txnId) {
           </tbody>
         </table>
       `;
-    } else {
-      // Legacy single-item transaction (fallback for old data)
-      fishItemsHtml = `
+      } else {
+        // Legacy single-item transaction (fallback for old data)
+        fishItemsHtml = `
         <p><strong>Fish:</strong> ${txn.fish_name || 'N/A'}</p>
         <p><strong>Weight:</strong> ${formatWeight(txn.total_weight_kg)}</p>
         <p><strong>Price per Maund:</strong> Rs.${(txn.price_per_maund || 0).toFixed(2)}</p>
       `;
-    }
-    
-    receiptContent.innerHTML = `
+      }
+
+      receiptContent.innerHTML = `
       <div style="font-family: monospace; padding: 20px; background: white;">
         <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px;">
           <h2 style="margin: 0;">FishMarket</h2>
@@ -671,37 +691,37 @@ async function viewFarmerTransactionReceipt(txnId) {
         </div>
       </div>
     `;
-    
-    document.getElementById('viewFarmerReceiptModal').classList.add('active');
-  } catch (error) {
-    console.error('Error viewing farmer transaction:', error);
-    showAlert('Failed to load transaction receipt', 'error');
+
+      document.getElementById('viewFarmerReceiptModal').classList.add('active');
+    } catch (error) {
+      console.error('Error viewing farmer transaction:', error);
+      showAlert('Failed to load transaction receipt', 'error');
+    }
   }
-}
 
-function closeViewFarmerReceiptModal() {
-  document.getElementById('viewFarmerReceiptModal').classList.remove('active');
-}
+  function closeViewFarmerReceiptModal() {
+    document.getElementById('viewFarmerReceiptModal').classList.remove('active');
+  }
 
-function printFarmerReceipt() {
-  const receiptContent = document.getElementById('farmerReceiptContent').innerHTML;
-  const printWindow = window.open('', '', 'height=600,width=800');
-  
-  printWindow.document.write('<html><head><title>Print Receipt</title>');
-  printWindow.document.write('</head><body>');
-  printWindow.document.write(receiptContent);
-  printWindow.document.write('</body></html>');
-  
-  printWindow.document.close();
-  printWindow.print();
-}
-
-// Save farmer receipt as PDF
-async function saveFarmerReceiptAsPDF() {
-  try {
+  function printFarmerReceipt() {
     const receiptContent = document.getElementById('farmerReceiptContent').innerHTML;
-    
-    const html = `
+    const printWindow = window.open('', '', 'height=600,width=800');
+
+    printWindow.document.write('<html><head><title>Print Receipt</title>');
+    printWindow.document.write('</head><body>');
+    printWindow.document.write(receiptContent);
+    printWindow.document.write('</body></html>');
+
+    printWindow.document.close();
+    printWindow.print();
+  }
+
+  // Save farmer receipt as PDF
+  async function saveFarmerReceiptAsPDF() {
+    try {
+      const receiptContent = document.getElementById('farmerReceiptContent').innerHTML;
+
+      const html = `
       <!DOCTYPE html>
       <html>
       <head>
@@ -718,76 +738,137 @@ async function saveFarmerReceiptAsPDF() {
       </html>
     `;
 
-    const now = new Date();
-    const filename = `farmer_receipt_${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}.pdf`;
+      const now = new Date();
+      const filename = `farmer_receipt_${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}.pdf`;
 
-    const result = await window.electronAPI.savePDF({ html, filename });
+      const result = await window.electronAPI.savePDF({ html, filename });
 
-    if (result.success) {
-      showAlert('PDF saved successfully!', 'success');
-    } else if (result.message !== 'Save cancelled') {
-      showAlert('Failed to save PDF: ' + result.message, 'error');
+      if (result.success) {
+        showAlert('PDF saved successfully!', 'success');
+      } else if (result.message !== 'Save cancelled') {
+        showAlert('Failed to save PDF: ' + result.message, 'error');
+      }
+    } catch (error) {
+      console.error('Error saving PDF:', error);
+      showAlert('Failed to save PDF: ' + error.message, 'error');
     }
-  } catch (error) {
-    console.error('Error saving PDF:', error);
-    showAlert('Failed to save PDF: ' + error.message, 'error');
   }
-}
 
-// Helper function to format weight
-function formatWeight(totalKg) {
-  const KG_PER_MAUND = 40;
-  if (totalKg < KG_PER_MAUND) {
-    return `${totalKg.toFixed(2)} KG`;
+  // Helper function to format weight
+  function formatWeight(totalKg) {
+    const KG_PER_MAUND = 40;
+    if (totalKg < KG_PER_MAUND) {
+      return `${totalKg.toFixed(2)} KG`;
+    }
+    const maunds = Math.floor(totalKg / KG_PER_MAUND);
+    const kg = totalKg % KG_PER_MAUND;
+    if (kg === 0) {
+      return `${maunds} Maund`;
+    }
+    return `${maunds} Maund ${kg.toFixed(2)} KG`;
   }
-  const maunds = Math.floor(totalKg / KG_PER_MAUND);
-  const kg = totalKg % KG_PER_MAUND;
-  if (kg === 0) {
-    return `${maunds} Maund`;
-  }
-  return `${maunds} Maund ${kg.toFixed(2)} KG`;
-}
 
-// Close modal when clicking outside
-window.onclick = function(event) {
-  const farmerModal = document.getElementById('farmerModal');
-  const viewModal = document.getElementById('viewFarmerModal');
-  const editModal = document.getElementById('editFarmerTransactionModal');
-  const receiptModal = document.getElementById('viewFarmerReceiptModal');
-  
-  if (event.target === farmerModal) {
-    closeFarmerModal();
-  }
-  if (event.target === viewModal) {
-    closeViewFarmerModal();
-  }
-  if (event.target === editModal) {
-    closeEditFarmerTransactionModal();
-  }
-  if (event.target === receiptModal) {
-    closeViewFarmerReceiptModal();
-  }
-};
+  // Close modal when clicking outside
+  window.onclick = function (event) {
+    const farmerModal = document.getElementById('farmerModal');
+    const viewModal = document.getElementById('viewFarmerModal');
+    const editModal = document.getElementById('editFarmerTransactionModal');
+    const receiptModal = document.getElementById('viewFarmerReceiptModal');
 
-// Expose functions needed by HTML onclick handlers
-window.openAddFarmerModal = openAddFarmerModal;
-window.editFarmer = editFarmer;
-window.deleteFarmer = deleteFarmer;
-window.viewFarmer = viewFarmer;
-window.closeFarmerModal = closeFarmerModal;
-window.closeViewFarmerModal = closeViewFarmerModal;
-window.searchFarmers = searchFarmers;
-window.selectFarmerFromSuggestion = selectFarmerFromSuggestion;
-window.nextPage = nextPage;
-window.previousPage = previousPage;
-window.changePageSize = changePageSize;
-window.editFarmerTransactionFromFarmer = editFarmerTransactionFromFarmer;
-window.closeEditFarmerTransactionModal = closeEditFarmerTransactionModal;
-window.saveEditedFarmerTransaction = saveEditedFarmerTransaction;
-window.viewFarmerTransactionReceipt = viewFarmerTransactionReceipt;
-window.closeViewFarmerReceiptModal = closeViewFarmerReceiptModal;
-window.printFarmerReceipt = printFarmerReceipt;
-window.saveFarmerReceiptAsPDF = saveFarmerReceiptAsPDF;
+    if (event.target === farmerModal) {
+      closeFarmerModal();
+    }
+    if (event.target === viewModal) {
+      closeViewFarmerModal();
+    }
+    if (event.target === editModal) {
+      closeEditFarmerTransactionModal();
+    }
+    if (event.target === receiptModal) {
+      closeViewFarmerReceiptModal();
+    }
+  };
+
+  // View farmer manual entry receipt
+  async function viewFarmerManualEntryReceipt(entryId, entityName, entityBalance) {
+    try {
+      const entry = await window.electronAPI.getLedgerEntryById(entryId);
+      if (!entry) {
+        showAlert('Entry not found', 'error');
+        return;
+      }
+
+      const entryDate = new Date(entry.entry_date || entry.created_at);
+      const receiptContent = document.getElementById('farmerReceiptContent');
+      const typeLabel = entry.entry_type === 'CREDIT' ? 'Credit' : 'Debit';
+      const bgColor = entry.entry_type === 'CREDIT' ? '#fff3cd' : '#d4edda';
+
+      receiptContent.innerHTML = `
+        <div style="font-family: monospace; padding: 20px; background: white;">
+          <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px;">
+            <h2 style="margin: 0;">FishMarket</h2>
+            <p style="margin: 5px 0;">Manual Entry Receipt</p>
+          </div>
+          
+          <div style="margin-bottom: 20px;">
+            <p><strong>Receipt #:</strong> ME-${entry.id}</p>
+            <p><strong>Date:</strong> ${entryDate.toLocaleDateString('en-IN')}</p>
+            <p><strong>Farmer:</strong> ${entityName}</p>
+          </div>
+
+          <div style="background: ${bgColor}; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid ${entry.entry_type === 'CREDIT' ? '#ffc107' : '#28a745'};">
+            <p style="font-size: 18px; margin: 0;">
+              <strong>Type:</strong> Manual ${typeLabel}
+            </p>
+            <p style="font-size: 28px; margin: 15px 0; font-weight: bold; color: ${entry.entry_type === 'CREDIT' ? '#856404' : '#155724'};">
+              Rs.${entry.amount.toLocaleString()}
+            </p>
+          </div>
+
+          <div style="margin-bottom: 20px;">
+            <p><strong>Description:</strong></p>
+            <p style="padding: 15px; background: #f5f5f5; border-radius: 8px; margin: 5px 0;">${entry.description || 'No description provided'}</p>
+          </div>
+
+          <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <p style="margin: 0; font-size: 16px;"><strong>Resulting Balance:</strong> Rs.${Math.abs(entityBalance).toLocaleString()}
+              ${entityBalance < 0 ? ' (We Owe)' : entityBalance > 0 ? ' (Credit)' : ' (Balanced)'}
+            </p>
+          </div>
+
+          <div style="margin-top: 30px; text-align: center; border-top: 2px solid #000; padding-top: 10px;">
+            <p style="margin: 0;">Thank you for your business!</p>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('viewFarmerReceiptModal').classList.add('active');
+    } catch (error) {
+      console.error('Error viewing farmer manual entry:', error);
+      showAlert('Failed to load entry receipt', 'error');
+    }
+  }
+
+  // Expose functions needed by HTML onclick handlers
+  window.openAddFarmerModal = openAddFarmerModal;
+  window.editFarmer = editFarmer;
+  window.deleteFarmer = deleteFarmer;
+  window.viewFarmer = viewFarmer;
+  window.closeFarmerModal = closeFarmerModal;
+  window.closeViewFarmerModal = closeViewFarmerModal;
+  window.searchFarmers = searchFarmers;
+  window.selectFarmerFromSuggestion = selectFarmerFromSuggestion;
+  window.nextPage = nextPage;
+  window.previousPage = previousPage;
+  window.changePageSize = changePageSize;
+  window.editFarmerTransactionFromFarmer = editFarmerTransactionFromFarmer;
+  window.closeEditFarmerTransactionModal = closeEditFarmerTransactionModal;
+  window.saveEditedFarmerTransaction = saveEditedFarmerTransaction;
+  window.viewFarmerTransactionReceipt = viewFarmerTransactionReceipt;
+  window.closeViewFarmerReceiptModal = closeViewFarmerReceiptModal;
+  window.printFarmerReceipt = printFarmerReceipt;
+  window.saveFarmerReceiptAsPDF = saveFarmerReceiptAsPDF;
+  window.viewFarmerManualEntryReceipt = viewFarmerManualEntryReceipt;
 
 })(); // End of IIFE
 

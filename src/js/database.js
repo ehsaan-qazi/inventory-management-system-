@@ -341,6 +341,49 @@ class FishMarketDB {
       console.error('Error during farmer_transactions migration:', e);
     }
 
+    // TRANSITIONAL: Create ledger_entries table for append-only balance tracking
+    // This table records all balance changes (sales, purchases, manual entries)
+    // Used in parallel with legacy balance calculation during transition
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS ledger_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('customer', 'farmer')),
+        entity_id INTEGER NOT NULL,
+        entry_type TEXT NOT NULL CHECK(entry_type IN ('CREDIT', 'DEBIT')),
+        amount REAL NOT NULL,
+        reference_type TEXT CHECK(reference_type IN ('sale', 'purchase', 'manual', NULL)),
+        reference_id INTEGER,
+        description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // TRANSITIONAL: Indexes for ledger_entries performance
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_ledger_entity 
+      ON ledger_entries(entity_type, entity_id);
+    `);
+
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_ledger_created 
+      ON ledger_entries(created_at);
+    `);
+
+    // Add entry_date column to ledger_entries for user-selected dates
+    // Separate from created_at which remains the audit timestamp
+    try {
+      this.db.exec(`ALTER TABLE ledger_entries ADD COLUMN entry_date DATE`);
+      console.log('Added entry_date column to ledger_entries table');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
+    // Index for entry_date to support chronological ordering
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_ledger_entry_date 
+      ON ledger_entries(entry_date);
+    `);
+
     console.log('Database tables initialized successfully');
   }
 
@@ -440,6 +483,15 @@ class FishMarketDB {
 
   // Calculate customer balance dynamically from initial_balance + transactions (Issue 3 & 7)
   getCustomerBalance(customerId) {
+    // DEBUG: Trace balance calculation path
+    console.log('[DEBUG] getCustomerBalance called for customer:', customerId, 'useLedgerBalance:', this.useLedgerBalance);
+
+    // TRANSITIONAL: Delegate to ledger-based balance when feature flag is enabled
+    if (this.useLedgerBalance) {
+      console.log('[DEBUG] Using ledger-based balance for customer:', customerId);
+      return this.getCustomerBalanceFromLedger(customerId);
+    }
+
     // Get initial balance from customers table
     const initialStmt = this.db.prepare(`
       SELECT COALESCE(initial_balance, 0) as initial_balance FROM customers WHERE id = ?
@@ -611,6 +663,11 @@ class FishMarketDB {
 
   // Calculate farmer balance dynamically from initial_balance + transactions
   getFarmerBalance(farmerId) {
+    // TRANSITIONAL: Delegate to ledger-based balance when feature flag is enabled
+    if (this.useLedgerBalance) {
+      return this.getFarmerBalanceFromLedger(farmerId);
+    }
+
     // Get initial balance from farmers table
     const initialStmt = this.db.prepare(`
       SELECT COALESCE(initial_balance, 0) as initial_balance FROM farmers WHERE id = ?
@@ -852,6 +909,20 @@ class FishMarketDB {
 
       // Update daily summary
       this.updateDailySummary(txn.transaction_date, txn.total_amount, txn.paid_amount, txn.balance_change);
+
+      // TRANSITIONAL: Insert ledger entry for sale (CREDIT to customer account)
+      // balance_change is negative when customer owes money (outstanding)
+      // We record the absolute value as a CREDIT entry
+      if (txn.balance_change !== 0) {
+        const ledgerStmt = this.db.prepare(`
+          INSERT INTO ledger_entries (entity_type, entity_id, entry_type, amount, reference_type, reference_id, description)
+          VALUES ('customer', ?, ?, ?, 'sale', ?, 'Sale transaction')
+        `);
+        // If balance_change is negative (customer owes), it's a CREDIT
+        // If balance_change is positive (customer overpaid/prepaid), it's a DEBIT
+        const entryType = txn.balance_change < 0 ? 'CREDIT' : 'DEBIT';
+        ledgerStmt.run(txn.customer_id, entryType, Math.abs(txn.balance_change), transactionId);
+      }
 
       return transactionId;
     });
@@ -1117,6 +1188,20 @@ class FishMarketDB {
       // Update farmer balance
       this.updateFarmerBalance(txn.farmer_id, txn.balance_after);
 
+      // TRANSITIONAL: Insert ledger entry for farmer purchase
+      // balance_change is positive when we owe the farmer (DEBIT to our account)
+      // balance_change is negative if farmer was overpaid (CREDIT)
+      if (txn.balance_change !== 0) {
+        const ledgerStmt = this.db.prepare(`
+          INSERT INTO ledger_entries (entity_type, entity_id, entry_type, amount, reference_type, reference_id, description)
+          VALUES ('farmer', ?, ?, ?, 'purchase', ?, 'Farmer purchase transaction')
+        `);
+        // If balance_change is positive (we owe farmer), it's a DEBIT
+        // If balance_change is negative (farmer was overpaid), it's a CREDIT
+        const entryType = txn.balance_change > 0 ? 'DEBIT' : 'CREDIT';
+        ledgerStmt.run(txn.farmer_id, entryType, Math.abs(txn.balance_change), transactionId);
+      }
+
       return transactionId;
     });
 
@@ -1308,6 +1393,274 @@ class FishMarketDB {
         console.error('Auto backup failed:', error.message);
       }
     }, 24 * 60 * 60 * 1000); // 24 hours
+  }
+
+  // ============================================================================
+  // TRANSITIONAL: Ledger Entry Operations
+  // These methods support the new append-only ledger system for balance tracking
+  // ============================================================================
+
+  // TRANSITIONAL: Feature flag for ledger-based balance calculation
+  // Set to true to use ledger aggregation, false for legacy balance calculation
+  // Default: false (legacy mode) - set to true when ready to switch
+  get useLedgerBalance() {
+    return this._useLedgerBalance || false;
+  }
+
+  set useLedgerBalance(value) {
+    this._useLedgerBalance = value;
+  }
+
+  // TRANSITIONAL: Add manual ledger entry (CREDIT or DEBIT)
+  addLedgerEntry(entry) {
+    const stmt = this.db.prepare(`
+      INSERT INTO ledger_entries (entity_type, entity_id, entry_type, amount, reference_type, description, entry_date)
+      VALUES (@entity_type, @entity_id, @entry_type, @amount, 'manual', @description, @entry_date)
+    `);
+    const info = stmt.run({
+      entity_type: entry.entity_type,
+      entity_id: entry.entity_id,
+      entry_type: entry.entry_type, // 'CREDIT' or 'DEBIT'
+      amount: entry.amount,
+      description: entry.description || null,
+      entry_date: entry.entry_date || null  // NULL = use created_at in queries
+    });
+    return info.lastInsertRowid;
+  }
+
+  // TRANSITIONAL: Get ledger entries for an entity
+  getLedgerEntries(entityType, entityId, options = {}) {
+    const { limit = 50, offset = 0 } = options;
+    const stmt = this.db.prepare(`
+      SELECT * FROM ledger_entries 
+      WHERE entity_type = ? AND entity_id = ?
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+    `);
+    return stmt.all(entityType, entityId, limit, offset);
+  }
+
+  // TRANSITIONAL: Get all ledger entries (for reports)
+  getAllLedgerEntries(options = {}) {
+    const { limit = 100, offset = 0, entityType = null } = options;
+
+    let query = 'SELECT * FROM ledger_entries';
+    const params = [];
+
+    if (entityType) {
+      query += ' WHERE entity_type = ?';
+      params.push(entityType);
+    }
+
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+
+    const stmt = this.db.prepare(query);
+    return stmt.all(...params);
+  }
+
+  // Get single ledger entry by ID (for receipt view)
+  getLedgerEntryById(id) {
+    const stmt = this.db.prepare(`
+      SELECT le.*, 
+        CASE le.entity_type 
+          WHEN 'customer' THEN (SELECT name FROM customers WHERE id = le.entity_id)
+          WHEN 'farmer' THEN (SELECT name FROM farmers WHERE id = le.entity_id)
+        END as entity_name
+      FROM ledger_entries le
+      WHERE le.id = ?
+    `);
+    return stmt.get(id);
+  }
+
+  // Get unified account history for customer (fish transactions + manual entries)
+  getCustomerAccountHistory(customerId) {
+    const stmt = this.db.prepare(`
+      SELECT 
+        'sale' as record_type,
+        id,
+        transaction_date as entry_date,
+        transaction_time as entry_time,
+        total_amount as amount,
+        paid_amount,
+        balance_change,
+        payment_status,
+        NULL as description,
+        NULL as entry_type,
+        created_at
+      FROM transactions
+      WHERE customer_id = ? AND (status IS NULL OR status = 'completed')
+
+      UNION ALL
+
+      SELECT 
+        'manual_' || LOWER(entry_type) as record_type,
+        id,
+        COALESCE(entry_date, DATE(created_at)) as entry_date,
+        TIME(created_at) as entry_time,
+        amount,
+        NULL as paid_amount,
+        CASE entry_type
+          WHEN 'CREDIT' THEN -amount
+          WHEN 'DEBIT' THEN amount
+        END as balance_change,
+        NULL as payment_status,
+        description,
+        entry_type,
+        created_at
+      FROM ledger_entries
+      WHERE entity_type = 'customer' 
+        AND entity_id = ? 
+        AND reference_type = 'manual'
+
+      ORDER BY entry_date DESC, entry_time DESC
+    `);
+    return stmt.all(customerId, customerId);
+  }
+
+  // Get unified account history for farmer (fish transactions + manual entries)
+  getFarmerAccountHistory(farmerId) {
+    const stmt = this.db.prepare(`
+      SELECT 
+        'purchase' as record_type,
+        ft.id,
+        ft.transaction_date as entry_date,
+        ft.transaction_time as entry_time,
+        ft.total_amount as amount,
+        ft.paid_amount,
+        ft.balance_change,
+        NULL as payment_status,
+        NULL as description,
+        NULL as entry_type,
+        ft.created_at,
+        COALESCE(
+          (SELECT GROUP_CONCAT(fti.fish_name, ', ') 
+           FROM farmer_transaction_items fti 
+           WHERE fti.transaction_id = ft.id),
+          ft.fish_name,
+          'N/A'
+        ) as fish_name,
+        ft.commission_amount
+      FROM farmer_transactions ft
+      WHERE ft.farmer_id = ? AND (ft.status IS NULL OR ft.status = 'completed')
+
+      UNION ALL
+
+      SELECT 
+        'manual_' || LOWER(entry_type) as record_type,
+        id,
+        COALESCE(entry_date, DATE(created_at)) as entry_date,
+        TIME(created_at) as entry_time,
+        amount,
+        NULL as paid_amount,
+        CASE entry_type
+          WHEN 'DEBIT' THEN amount
+          WHEN 'CREDIT' THEN -amount
+        END as balance_change,
+        NULL as payment_status,
+        description,
+        entry_type,
+        created_at,
+        NULL as fish_name,
+        NULL as commission_amount
+      FROM ledger_entries
+      WHERE entity_type = 'farmer' 
+        AND entity_id = ? 
+        AND reference_type = 'manual'
+
+      ORDER BY entry_date DESC, entry_time DESC
+    `);
+    return stmt.all(farmerId, farmerId);
+  }
+
+  // TRANSITIONAL: Calculate customer balance from legacy transactions + manual ledger entries
+  // This hybrid approach preserves legacy balance and adds manual adjustments from ledger
+  getCustomerBalanceFromLedger(customerId) {
+    // Get initial balance from customers table
+    const initialStmt = this.db.prepare(`
+      SELECT COALESCE(initial_balance, 0) as initial_balance FROM customers WHERE id = ?
+    `);
+    const initial = initialStmt.get(customerId)?.initial_balance || 0;
+
+    // Get sum of all transaction balance changes (legacy transactions)
+    const txnStmt = this.db.prepare(`
+      SELECT COALESCE(SUM(balance_change), 0) as txn_balance
+      FROM transactions
+      WHERE customer_id = ? AND status != 'voided'
+    `);
+    const txnBalance = txnStmt.get(customerId)?.txn_balance || 0;
+
+    // Get MANUAL ledger entries only (reference_type = 'manual')
+    // Credits increase outstanding (negative balance)
+    const creditStmt = this.db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) as credits
+      FROM ledger_entries 
+      WHERE entity_type = 'customer' AND entity_id = ? AND entry_type = 'CREDIT' AND reference_type = 'manual'
+    `);
+    // Debits reduce outstanding / represent payments received
+    const debitStmt = this.db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) as debits
+      FROM ledger_entries 
+      WHERE entity_type = 'customer' AND entity_id = ? AND entry_type = 'DEBIT' AND reference_type = 'manual'
+    `);
+
+    const manualCredits = creditStmt.get(customerId)?.credits || 0;
+    const manualDebits = debitStmt.get(customerId)?.debits || 0;
+
+    // DEBUG: Trace ledger balance calculation values
+    console.log('[DEBUG] getCustomerBalanceFromLedger:', {
+      customerId,
+      initial,
+      txnBalance,
+      manualCredits,
+      manualDebits,
+      finalBalance: initial + txnBalance + manualDebits - manualCredits
+    });
+
+    // Legacy balance + manual adjustments
+    // Credits = increase outstanding (subtract from balance, making it more negative)
+    // Debits = payment received (add to balance, making it less negative)
+    return initial + txnBalance + manualDebits - manualCredits;
+  }
+
+  // TRANSITIONAL: Calculate farmer balance from legacy transactions + manual ledger entries
+  // This hybrid approach preserves legacy balance and adds manual adjustments from ledger
+  getFarmerBalanceFromLedger(farmerId) {
+    // Get initial balance from farmers table
+    const initialStmt = this.db.prepare(`
+      SELECT COALESCE(initial_balance, 0) as initial_balance FROM farmers WHERE id = ?
+    `);
+    const initial = initialStmt.get(farmerId)?.initial_balance || 0;
+
+    // Get sum of all transaction balance changes (legacy transactions)
+    const txnStmt = this.db.prepare(`
+      SELECT COALESCE(SUM(balance_change), 0) as txn_balance
+      FROM farmer_transactions
+      WHERE farmer_id = ? AND status != 'voided'
+    `);
+    const txnBalance = txnStmt.get(farmerId)?.txn_balance || 0;
+
+    // Get MANUAL ledger entries only (reference_type = 'manual')
+    // Debits increase what we owe farmer
+    const debitStmt = this.db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) as debits
+      FROM ledger_entries 
+      WHERE entity_type = 'farmer' AND entity_id = ? AND entry_type = 'DEBIT' AND reference_type = 'manual'
+    `);
+    // Credits reduce what we owe (payment made to farmer)
+    const creditStmt = this.db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) as credits
+      FROM ledger_entries 
+      WHERE entity_type = 'farmer' AND entity_id = ? AND entry_type = 'CREDIT' AND reference_type = 'manual'
+    `);
+
+    const manualDebits = debitStmt.get(farmerId)?.debits || 0;
+    const manualCredits = creditStmt.get(farmerId)?.credits || 0;
+
+    // Legacy balance + manual adjustments
+    // Debits = we owe more (add to positive balance)
+    // Credits = payment made (subtract from balance)
+    return initial + txnBalance + manualDebits - manualCredits;
   }
 
   close() {

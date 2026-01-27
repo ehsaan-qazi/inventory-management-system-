@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fish Market Inventory - Customers</title>
     <link rel="stylesheet" href="../css/styles.css">
 </head>
+
 <body>
     <div class="app-container">
         <!-- Sidebar -->
@@ -34,6 +36,10 @@
                     <span class="icon"><img src="../assets/Fish_Categories.png" alt="Fish Categories"></span>
                     <span>Fish Categories</span>
                 </a>
+                <a href="manual-entries.html" class="nav-item">
+                    <span class="icon"><img src="../assets/reports.png" alt="Manual Entries"></span>
+                    <span>Manual Entries</span>
+                </a>
                 <a href="reports.html" class="nav-item">
                     <span class="icon"><img src="../assets/reports.png" alt="Reports"></span>
                     <span>Reports</span>
@@ -46,7 +52,9 @@
             <header class="header">
                 <div class="search-bar">
                     <input type="text" id="searchInput" placeholder="Search Customer Name, ID, or Phone Number">
-                    <button class="search-btn" onclick="searchCustomers()"><img src="../assets/search-interface-symbol.png" alt="Search" style="width: 18px; height: 18px;"></button>
+                    <button class="search-btn" onclick="searchCustomers()"><img
+                            src="../assets/search-interface-symbol.png" alt="Search"
+                            style="width: 18px; height: 18px;"></button>
                 </div>
                 <div class="user-info">
                     <span class="user-name">Admin</span>
@@ -58,7 +66,7 @@
 
                 <!-- Alert container -->
                 <div id="alertContainer"></div>
-                
+
                 <!-- Customers Table -->
                 <div class="table-section">
                     <div class="section-header">
@@ -67,23 +75,27 @@
                             + Add Customer
                         </button>
                     </div>
-                    
+
                     <!-- Pagination Controls -->
-                    <div class="pagination-controls" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                    <div class="pagination-controls"
+                        style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
                         <div>
-                            <select id="pageSize" class="form-control" style="width: auto; display: inline-block;" onchange="changePageSize()">
+                            <select id="pageSize" class="form-control" style="width: auto; display: inline-block;"
+                                onchange="changePageSize()">
                                 <option value="25">25 per page</option>
                                 <option value="50" selected>50 per page</option>
                                 <option value="100">100 per page</option>
                             </select>
                         </div>
                         <div class="pagination-buttons">
-                            <button class="btn btn-outline btn-small" onclick="previousPage()" id="prevBtn" disabled>← Previous</button>
+                            <button class="btn btn-outline btn-small" onclick="previousPage()" id="prevBtn" disabled>←
+                                Previous</button>
                             <span id="pageInfo" style="margin: 0 15px; font-weight: 500;">Page 1 of 1</span>
-                            <button class="btn btn-outline btn-small" onclick="nextPage()" id="nextBtn" disabled>Next →</button>
+                            <button class="btn btn-outline btn-small" onclick="nextPage()" id="nextBtn" disabled>Next
+                                →</button>
                         </div>
                     </div>
-                    
+
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -117,22 +129,22 @@
             <div class="modal-body">
                 <form id="customerForm">
                     <input type="hidden" id="customerId">
-                    
+
                     <div class="form-group">
                         <label for="customerName">Customer Name *</label>
                         <input type="text" id="customerName" class="form-control" required>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="customerPhone">Phone Number</label>
                         <input type="tel" id="customerPhone" class="form-control">
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="customerAddress">Address</label>
                         <textarea id="customerAddress" class="form-control"></textarea>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="customerBalance">Initial Balance (Optional)</label>
                         <input type="number" id="customerBalance" class="form-control" step="0.01" value="0">
@@ -165,14 +177,14 @@
                     <p style="margin: 5px 0;"><strong>Joined:</strong> <span id="viewCustomerDate"></span></p>
                 </div>
 
-                <h4 style="margin-top: 30px; margin-bottom: 15px; color: var(--text-primary);">Transaction History</h4>
+                <h4 style="margin-top: 30px; margin-bottom: 15px; color: var(--text-primary);">Account History</h4>
                 <table class="data-table">
                     <thead>
                         <tr>
                             <th>Date</th>
+                            <th>Type</th>
                             <th>Amount</th>
-                            <th>Paid</th>
-                            <th>Status</th>
+                            <th>Details</th>
                             <th style="width: 100px;">Actions</th>
                         </tr>
                     </thead>
@@ -198,12 +210,12 @@
             </div>
             <div class="modal-body">
                 <div id="editAlertContainer"></div>
-                
+
                 <div class="form-group">
                     <label>Customer</label>
                     <input type="text" id="editCustomerName" class="form-control" readonly style="background: #f0f0f0;">
                 </div>
-                
+
                 <div class="form-row">
                     <div class="form-group">
                         <label for="editPaidAmount">Paid Amount (Rs.)</label>
@@ -211,15 +223,16 @@
                     </div>
                     <div class="form-group">
                         <label>Total Amount (Rs.)</label>
-                        <input type="text" id="editTotalAmount" class="form-control" readonly style="background: #f0f0f0;">
+                        <input type="text" id="editTotalAmount" class="form-control" readonly
+                            style="background: #f0f0f0;">
                     </div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="editNotes">Notes</label>
                     <textarea id="editNotes" class="form-control"></textarea>
                 </div>
-                
+
                 <div style="padding: 10px; background: #fff3cd; border-radius: 6px; margin-top: 15px;">
                     <strong>⚠️ Note:</strong> You can only edit the paid amount and notes. Items cannot be modified.
                 </div>
@@ -255,5 +268,5 @@
     <script src="../js/validation.js"></script>
     <script src="../js/customers.js"></script>
 </body>
-</html>
 
+</html>
