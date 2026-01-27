@@ -483,12 +483,8 @@ class FishMarketDB {
 
   // Calculate customer balance dynamically from initial_balance + transactions (Issue 3 & 7)
   getCustomerBalance(customerId) {
-    // DEBUG: Trace balance calculation path
-    console.log('[DEBUG] getCustomerBalance called for customer:', customerId, 'useLedgerBalance:', this.useLedgerBalance);
-
     // TRANSITIONAL: Delegate to ledger-based balance when feature flag is enabled
     if (this.useLedgerBalance) {
-      console.log('[DEBUG] Using ledger-based balance for customer:', customerId);
       return this.getCustomerBalanceFromLedger(customerId);
     }
 
@@ -1606,16 +1602,6 @@ class FishMarketDB {
 
     const manualCredits = creditStmt.get(customerId)?.credits || 0;
     const manualDebits = debitStmt.get(customerId)?.debits || 0;
-
-    // DEBUG: Trace ledger balance calculation values
-    console.log('[DEBUG] getCustomerBalanceFromLedger:', {
-      customerId,
-      initial,
-      txnBalance,
-      manualCredits,
-      manualDebits,
-      finalBalance: initial + txnBalance + manualDebits - manualCredits
-    });
 
     // Legacy balance + manual adjustments
     // Credits = increase outstanding (subtract from balance, making it more negative)

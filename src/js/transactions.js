@@ -1464,6 +1464,9 @@ function calculateFarmerTotals() {
   const netToFarmer = roundMoney(totalFishValue - commissionAmount - munshiNama - barafPrice - labourCharges - extraCharges);
   document.getElementById('netToFarmer').textContent = formatMoney(netToFarmer);
 
+  // Update the live bill preview card
+  updateBillPreview(totalFishValue, commissionAmount, munshiNama, barafPrice, labourCharges, extraCharges, netToFarmer);
+
   // Set paid amount to net amount by default if it's 0
   const paidInput = document.getElementById('farmerPaidAmount');
   if (parseFloat(paidInput.value) === 0 && netToFarmer > 0) {
@@ -1472,6 +1475,28 @@ function calculateFarmerTotals() {
 
   // Calculate balance
   calculateFarmerBalance();
+}
+
+// Update live bill preview card
+function updateBillPreview(totalFishValue, commissionAmount, munshiNama, barafPrice, labourCharges, extraCharges, netToFarmer) {
+  const previewFishValue = document.getElementById('previewFishValue');
+  const previewCommission = document.getElementById('previewCommission');
+  const previewMunshiNama = document.getElementById('previewMunshiNama');
+  const previewBarafPrice = document.getElementById('previewBarafPrice');
+  const previewLabourCharges = document.getElementById('previewLabourCharges');
+  const previewExtraCharges = document.getElementById('previewExtraCharges');
+  const previewNetToFarmer = document.getElementById('previewNetToFarmer');
+
+  // Only update if elements exist (farmer tab is active)
+  if (!previewFishValue) return;
+
+  previewFishValue.textContent = 'Rs.' + formatMoney(totalFishValue);
+  previewCommission.textContent = 'Rs.' + formatMoney(commissionAmount);
+  previewMunshiNama.textContent = 'Rs.' + formatMoney(munshiNama);
+  previewBarafPrice.textContent = 'Rs.' + formatMoney(barafPrice);
+  previewLabourCharges.textContent = 'Rs.' + formatMoney(labourCharges);
+  previewExtraCharges.textContent = 'Rs.' + formatMoney(extraCharges);
+  previewNetToFarmer.textContent = 'Rs.' + formatMoney(netToFarmer);
 }
 
 // Calculate farmer balance change based on paid amount
@@ -1543,10 +1568,10 @@ async function saveFarmerTransaction() {
       return;
     }
 
-    // Get commission
+    // Get commission (0% is valid - no commission)
     const commissionPercent = parseFloat(document.getElementById('commissionPercent').value);
-    if (!commissionPercent || commissionPercent < 1 || commissionPercent > 100) {
-      showAlert('Please enter commission percentage (1-100%)', 'warning');
+    if (isNaN(commissionPercent) || commissionPercent < 0 || commissionPercent > 100) {
+      showAlert('Please enter commission percentage (0-100%)', 'warning');
       setButtonLoading(saveBtn, false);
       return;
     }
