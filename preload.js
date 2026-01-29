@@ -64,6 +64,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getCustomerAccountHistory: (customerId) => ipcRenderer.invoke('db:getCustomerAccountHistory', customerId),
   getFarmerAccountHistory: (farmerId) => ipcRenderer.invoke('db:getFarmerAccountHistory', farmerId),
 
+  // Audit History (shows voided/reversed entries with status labels)
+  getCustomerAccountAuditHistory: (customerId) => ipcRenderer.invoke('db:getCustomerAccountAuditHistory', customerId),
+  getFarmerAccountAuditHistory: (farmerId) => ipcRenderer.invoke('db:getFarmerAccountAuditHistory', farmerId),
+
+  // Void/Reversal operations (accounting-safe deletion)
+  voidCustomerTransaction: (id) => ipcRenderer.invoke('db:voidCustomerTransaction', id),
+  voidFarmerTransaction: (id) => ipcRenderer.invoke('db:voidFarmerTransaction', id),
+  reverseLedgerEntry: (id) => ipcRenderer.invoke('db:reverseLedgerEntry', id),
+
   // PDF operations
   savePDF: (data) => ipcRenderer.invoke('print:savePDF', data),
 });

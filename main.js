@@ -269,6 +269,28 @@ function setupIPCHandlers() {
     return db.getFarmerAccountHistory(farmerId);
   });
 
+  // Audit History (shows voided/reversed entries with status labels)
+  ipcMain.handle('db:getCustomerAccountAuditHistory', async (event, customerId) => {
+    return db.getCustomerAccountAuditHistory(customerId);
+  });
+
+  ipcMain.handle('db:getFarmerAccountAuditHistory', async (event, farmerId) => {
+    return db.getFarmerAccountAuditHistory(farmerId);
+  });
+
+  // Void/Reversal operations (accounting-safe deletion)
+  ipcMain.handle('db:voidCustomerTransaction', async (event, transactionId) => {
+    return db.voidCustomerTransaction(transactionId);
+  });
+
+  ipcMain.handle('db:voidFarmerTransaction', async (event, transactionId) => {
+    return db.voidFarmerTransaction(transactionId);
+  });
+
+  ipcMain.handle('db:reverseLedgerEntry', async (event, entryId) => {
+    return db.reverseLedgerEntry(entryId);
+  });
+
   // PDF Generation
   ipcMain.handle('print:savePDF', async (event, { html, filename }) => {
     try {

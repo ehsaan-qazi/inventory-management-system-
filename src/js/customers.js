@@ -7,6 +7,12 @@
   let searchTimeout;
   let suggestionsDiv;
 
+  // Current customer being viewed (for refreshing after void/reversal)
+  let currentViewingCustomerId = null;
+
+  // Audit mode toggle state (does NOT persist across app restarts)
+  let auditModeEnabled = false;
+
   // Pagination state
   let currentPage = 1;
   let pageSize = 50;
@@ -405,6 +411,8 @@
   // View customer details
   async function viewCustomer(id) {
     try {
+      currentViewingCustomerId = id; // Store for refresh after void/reversal
+
       const customer = await window.electronAPI.getCustomerById(id);
       if (!customer) {
         showAlert('Customer not found', 'error');
@@ -437,50 +445,12 @@
       const createdDate = new Date(customer.created_at);
       document.getElementById('viewCustomerDate').textContent = createdDate.toLocaleDateString('en-IN');
 
-      // Load unified account history (fish transactions + manual entries)
-      const history = await window.electronAPI.getCustomerAccountHistory(id);
-      const transactionsBody = document.getElementById('customerTransactions');
+      // Load history based on audit mode
+      const history = auditModeEnabled
+        ? await window.electronAPI.getCustomerAccountAuditHistory(id)
+        : await window.electronAPI.getCustomerAccountHistory(id);
 
-      if (history.length === 0) {
-        transactionsBody.innerHTML = '<tr><td colspan="5" class="no-data">No transactions yet</td></tr>';
-      } else {
-        transactionsBody.innerHTML = history.map(record => {
-          const date = new Date(record.entry_date);
-
-          // Check if this is a manual entry or fish transaction
-          if (record.record_type === 'manual_credit' || record.record_type === 'manual_debit') {
-            // Manual entry row
-            const typeLabel = record.record_type === 'manual_credit' ? 'Manual Credit' : 'Manual Debit';
-            const typeClass = record.record_type === 'manual_credit' ? 'partial' : 'paid';
-            return `
-            <tr class="transaction-row-clickable" onclick="viewManualEntryReceipt(${record.id}, '${customer.name}', ${customer.balance})">
-              <td>${date.toLocaleDateString('en-IN')}</td>
-              <td><span class="status-badge ${typeClass}">${typeLabel}</span></td>
-              <td>Rs.${record.amount.toFixed(2)}</td>
-              <td>${record.description || '-'}</td>
-              <td class="action-buttons">
-                <span style="color: var(--text-secondary); font-size: 12px;">View</span>
-              </td>
-            </tr>
-          `;
-          } else {
-            // Fish transaction row
-            return `
-            <tr class="transaction-row-clickable" onclick="viewTransactionReceipt(${record.id})">
-              <td>${date.toLocaleDateString('en-IN')}</td>
-              <td><span class="status-badge active">Sale</span></td>
-              <td>Rs.${record.amount.toFixed(2)}</td>
-              <td><span class="status-badge ${record.payment_status}">${record.payment_status}</span></td>
-              <td class="action-buttons">
-                <button class="action-btn edit" onclick="event.stopPropagation(); editTransactionFromCustomer(${record.id})" title="Edit">
-                  <img src="../assets/edit.png" alt="Edit" style="width: 16px; height: 16px;">
-                </button>
-              </td>
-            </tr>
-          `;
-          }
-        }).join('');
-      }
+      renderCustomerHistory(history, customer);
 
       document.getElementById('viewCustomerModal').classList.add('active');
     } catch (error) {
@@ -489,9 +459,156 @@
     }
   }
 
+  // Render customer transaction history (separated for audit mode toggle)
+  function renderCustomerHistory(history, customer) {
+    const transactionsBody = document.getElementById('customerTransactions');
+
+    if (history.length === 0) {
+      transactionsBody.innerHTML = '<tr><td colspan="6" class="no-data">No transactions yet</td></tr>';
+      return;
+    }
+
+    transactionsBody.innerHTML = history.map(record => {
+      const date = new Date(record.entry_date);
+      const auditStatus = record.audit_status;
+
+      // In audit mode, show status labels and no action buttons
+      if (auditStatus) {
+        // Voided/Reversed/Reversal entry - read-only display
+        const statusLabel = auditStatus === 'VOIDED' ? '🚫 VOIDED'
+          : auditStatus === 'REVERSED' ? '↩️ REVERSED'
+            : '📋 REVERSAL';
+        const recordLabel = record.record_type === 'sale' ? 'Sale'
+          : record.record_type.startsWith('manual_') ? (record.record_type === 'manual_credit' ? 'Manual Credit' : 'Manual Debit')
+            : 'Purchase';
+
+        return `
+        <tr class="audit-row" style="opacity: 0.6; background: #f5f5f5;">
+          <td>${date.toLocaleDateString('en-IN')}</td>
+          <td><span class="status-badge" style="background: #999;">${recordLabel}</span></td>
+          <td>Rs.${record.amount.toFixed(2)}</td>
+          <td>${record.description || record.payment_status || '-'}</td>
+          <td><span style="color: #d32f2f; font-weight: bold; font-size: 11px;">${statusLabel}</span></td>
+          <td class="action-buttons">
+            <span style="color: var(--text-secondary); font-size: 11px;">View Receipt</span>
+          </td>
+        </tr>
+      `;
+      }
+
+      // Normal mode - show active entries with action buttons
+      if (record.record_type === 'manual_credit' || record.record_type === 'manual_debit') {
+        // Manual entry row with delete button
+        // Check if it's a NOTE (non-financial) entry
+        const isNote = record.affects_balance === 0;
+        const typeLabel = isNote ? 'Note' : (record.record_type === 'manual_credit' ? 'Manual Credit' : 'Manual Debit');
+        const typeClass = isNote ? 'active' : (record.record_type === 'manual_credit' ? 'partial' : 'paid');
+        const amountDisplay = isNote && record.amount === 0 ? '-' : `Rs.${record.amount.toFixed(2)}`;
+        return `
+        <tr class="transaction-row-clickable" onclick="viewManualEntryReceipt(${record.id}, '${customer.name.replace(/'/g, "\\'")}', ${customer.balance})">
+          <td>${date.toLocaleDateString('en-IN')}</td>
+          <td><span class="status-badge ${typeClass}">${typeLabel}</span></td>
+          <td>${amountDisplay}</td>
+          <td>${record.description || '-'}</td>
+          <td>-</td>
+          <td class="action-buttons">
+            <button class="action-btn delete" onclick="event.stopPropagation(); reverseManualEntry(${record.id})" title="Delete Entry">
+              <img src="../assets/delete.png" alt="Delete" style="width: 16px; height: 16px;">
+            </button>
+          </td>
+        </tr>
+      `;
+      } else {
+        // Fish transaction row with delete button
+        return `
+        <tr class="transaction-row-clickable" onclick="viewTransactionReceipt(${record.id})">
+          <td>${date.toLocaleDateString('en-IN')}</td>
+          <td><span class="status-badge active">Sale</span></td>
+          <td>Rs.${record.amount.toFixed(2)}</td>
+          <td><span class="status-badge ${record.payment_status}">${record.payment_status}</span></td>
+          <td>-</td>
+          <td class="action-buttons">
+            <button class="action-btn edit" onclick="event.stopPropagation(); editTransactionFromCustomer(${record.id})" title="Edit">
+              <img src="../assets/edit.png" alt="Edit" style="width: 16px; height: 16px;">
+            </button>
+            <button class="action-btn delete" onclick="event.stopPropagation(); voidCustomerTransaction(${record.id})" title="Delete Transaction">
+              <img src="../assets/delete.png" alt="Delete" style="width: 16px; height: 16px;">
+            </button>
+          </td>
+        </tr>
+      `;
+      }
+    }).join('');
+  }
+
+  // Toggle audit mode (does NOT persist across app restarts)
+  function toggleAuditMode() {
+    auditModeEnabled = !auditModeEnabled;
+    const toggleBtn = document.getElementById('auditModeToggle');
+    if (toggleBtn) {
+      toggleBtn.textContent = auditModeEnabled ? '📋 Audit Mode ON' : '📋 Audit Mode';
+      toggleBtn.style.background = auditModeEnabled ? '#d32f2f' : '';
+      toggleBtn.style.color = auditModeEnabled ? 'white' : '';
+    }
+    // Refresh current view
+    if (currentViewingCustomerId) {
+      viewCustomer(currentViewingCustomerId);
+    }
+  }
+
+  // Void a customer fish transaction (accounting-safe deletion)
+  async function voidCustomerTransaction(txnId) {
+    const confirmMsg = 'Delete this transaction?\n\n' +
+      'This will create a reversing entry and update the balance. ' +
+      'The transaction will be hidden from history but preserved for audit.';
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      await window.electronAPI.voidCustomerTransaction(txnId);
+      showAlert('Transaction deleted successfully', 'success');
+      // Refresh view
+      if (currentViewingCustomerId) {
+        await viewCustomer(currentViewingCustomerId);
+      }
+    } catch (error) {
+      console.error('Error voiding transaction:', error);
+      showAlert('Failed to delete transaction: ' + error.message, 'error');
+    }
+  }
+
+  // Reverse a manual ledger entry (accounting-safe deletion)
+  async function reverseManualEntry(entryId) {
+    const confirmMsg = 'Delete this manual entry?\n\n' +
+      'This will create a compensating entry and update the balance.';
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      await window.electronAPI.reverseLedgerEntry(entryId);
+      showAlert('Entry deleted successfully', 'success');
+      // Refresh view
+      if (currentViewingCustomerId) {
+        await viewCustomer(currentViewingCustomerId);
+      }
+    } catch (error) {
+      console.error('Error reversing entry:', error);
+      showAlert('Failed to delete entry: ' + error.message, 'error');
+    }
+  }
+
   // Close view customer modal
   function closeViewCustomerModal() {
     document.getElementById('viewCustomerModal').classList.remove('active');
+    currentViewingCustomerId = null;
+    // Reset audit mode when closing modal
+    auditModeEnabled = false;
+    const toggleBtn = document.getElementById('auditModeToggle');
+    if (toggleBtn) {
+      toggleBtn.textContent = '📋 Audit Mode';
+      toggleBtn.style.background = '';
+      toggleBtn.style.color = '';
+    }
   }
 
   // Show alert message
@@ -825,5 +942,11 @@
   window.saveReceiptAsPDF = saveReceiptAsPDF;
   window.viewManualEntryReceipt = viewManualEntryReceipt;
 
+  // Void/reversal and audit mode functions
+  window.toggleAuditMode = toggleAuditMode;
+  window.voidCustomerTransaction = voidCustomerTransaction;
+  window.reverseManualEntry = reverseManualEntry;
+
 })(); // End of IIFE (Issue 12)
+
 

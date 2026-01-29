@@ -13,6 +13,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadRecentEntries();
     setupEntitySearch();
     initializeDateField();
+
+    // Ensure focus works on page load - focus first interactive input
+    setTimeout(() => {
+        const entitySearch = document.getElementById('entitySearch');
+        if (entitySearch) {
+            entitySearch.focus();
+        }
+    }, 100);
 });
 
 // Initialize date field to today's date
@@ -47,6 +55,23 @@ function onEntityTypeChange() {
 
     // Clear current selection
     clearEntitySelection();
+}
+
+// Handle entry type change (show/hide amount for NOTE)
+function onEntryTypeChange() {
+    const entryType = document.getElementById('entryType').value;
+    const amountRequired = document.getElementById('amountRequired');
+    const amountInput = document.getElementById('amount');
+
+    if (entryType === 'NOTE') {
+        // NOTE type: amount is optional and doesn't affect balance
+        amountRequired.textContent = '(optional)';
+        amountInput.placeholder = 'Optional - does not affect balance';
+    } else {
+        // CREDIT/DEBIT: amount is required
+        amountRequired.textContent = '*';
+        amountInput.placeholder = 'Enter amount';
+    }
 }
 
 // Setup entity search with autocomplete
@@ -164,9 +189,12 @@ async function saveManualEntry() {
     const entityType = document.getElementById('entityType').value;
     const entityId = parseInt(document.getElementById('entityId').value);
     const entryType = document.getElementById('entryType').value;
-    const amount = parseFloat(document.getElementById('amount').value);
+    const amount = parseFloat(document.getElementById('amount').value) || 0;
     const description = document.getElementById('description').value.trim();
     const entryDate = document.getElementById('entryDate').value;
+
+    // Determine if this is a financial entry or a note
+    const isNote = entryType === 'NOTE';
 
     // Validation
     if (!entityId) {
@@ -174,7 +202,8 @@ async function saveManualEntry() {
         return;
     }
 
-    if (!amount || amount <= 0) {
+    // Amount validation: required for CREDIT/DEBIT, optional for NOTE
+    if (!isNote && (!amount || amount <= 0)) {
         showAlert('Please enter a valid amount greater than 0', 'error');
         return;
     }
@@ -190,24 +219,29 @@ async function saveManualEntry() {
     }
 
     try {
+        // For NOTE type: affects_balance = 0, store as DEBIT (doesn't matter, won't affect balance)
         const entryId = await window.electronAPI.addLedgerEntry({
             entity_type: entityType,
             entity_id: entityId,
-            entry_type: entryType,
+            entry_type: isNote ? 'DEBIT' : entryType,  // NOTE uses DEBIT as placeholder
             amount: amount,
             description: description,
-            entry_date: entryDate
+            entry_date: entryDate,
+            affects_balance: isNote ? 0 : 1  // NOTE doesn't affect balance
         });
 
-        showAlert(`Manual ${entryType.toLowerCase()} entry saved successfully (ID: ${entryId})`, 'success');
+        const typeLabel = isNote ? 'note' : entryType.toLowerCase();
+        showAlert(`Manual ${typeLabel} entry saved successfully (ID: ${entryId})`, 'success');
         clearForm();
         await loadRecentEntries();
 
-        // Refresh entity lists to get updated balances
-        if (entityType === 'customer') {
-            await loadCustomers();
-        } else {
-            await loadFarmers();
+        // Refresh entity lists to get updated balances (only if financial entry)
+        if (!isNote) {
+            if (entityType === 'customer') {
+                await loadCustomers();
+            } else {
+                await loadFarmers();
+            }
         }
     } catch (error) {
         console.error('Error saving entry:', error);
@@ -258,8 +292,14 @@ function renderRecentEntries(entries) {
             year: 'numeric'
         });
 
+        // Check if this is a NOTE (non-financial) entry
+        const isNote = entry.affects_balance === 0;
+        const typeLabel = isNote ? 'NOTE' : entry.entry_type;
+        const typeClass = isNote ? 'active' : (entry.entry_type === 'CREDIT' ? 'partial' : 'paid');
+        const amountDisplay = isNote && entry.amount === 0 ? '-' : `Rs.${entry.amount.toLocaleString()}`;
+
         return `
-      <tr>
+      <tr${isNote ? ' style="opacity: 0.8;"' : ''}>
         <td>${entry.id}</td>
         <td>${date}</td>
         <td>
@@ -269,11 +309,11 @@ function renderRecentEntries(entries) {
           #${entry.entity_id}
         </td>
         <td>
-          <span class="status-badge ${entry.entry_type === 'CREDIT' ? 'partial' : 'paid'}">
-            ${entry.entry_type}
+          <span class="status-badge ${typeClass}">
+            ${typeLabel}
           </span>
         </td>
-        <td>Rs.${entry.amount.toLocaleString()}</td>
+        <td>${amountDisplay}</td>
         <td>${entry.description || '-'}</td>
       </tr>
     `;

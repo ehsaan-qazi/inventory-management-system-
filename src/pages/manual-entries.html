@@ -61,10 +61,10 @@
             </header>
 
             <section class="content">
-                <h1>Manual Credit / Debit</h1>
+                <h1>Manual Credit / Debit / Note</h1>
                 <p class="text-muted" style="margin-bottom: 20px;">
-                    Adjust balances without creating sales or purchases. Use this for payments received, refunds, or
-                    balance corrections.
+                    Adjust balances without creating sales or purchases. Use this for payments received, refunds,
+                    balance corrections, or descriptive notes that don't affect balance.
                 </p>
 
                 <!-- Alert container -->
@@ -113,17 +113,18 @@
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="entryType">Entry Type *</label>
-                                <select id="entryType" class="form-control">
+                                <select id="entryType" class="form-control" onchange="onEntryTypeChange()">
                                     <option value="CREDIT">Credit (Increase Outstanding)</option>
                                     <option value="DEBIT">Debit (Payment Received / Reduce Outstanding)</option>
+                                    <option value="NOTE">Note (Does NOT affect balance)</option>
                                 </select>
-                                <small style="color: var(--text-secondary); font-size: 12px;">
-                                    Credit = Increase what they owe | Debit = Payment received
+                                <small id="entryTypeHint" style="color: var(--text-secondary); font-size: 12px;">
+                                    Credit = Increase what they owe | Debit = Payment received | Note = Record only
                                 </small>
                             </div>
 
-                            <div class="form-group">
-                                <label for="amount">Amount (Rs.) *</label>
+                            <div class="form-group" id="amountGroup">
+                                <label for="amount">Amount (Rs.) <span id="amountRequired">*</span></label>
                                 <input type="number" id="amount" class="form-control" min="0" step="0.01"
                                     placeholder="Enter amount">
                             </div>

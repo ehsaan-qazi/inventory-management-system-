@@ -384,6 +384,37 @@ class FishMarketDB {
       ON ledger_entries(entry_date);
     `);
 
+    // Add is_reversed flag for voided manual entries (accounting-safe deletion)
+    try {
+      this.db.exec(`ALTER TABLE ledger_entries ADD COLUMN is_reversed INTEGER DEFAULT 0`);
+      console.log('Added is_reversed column to ledger_entries table');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
+    // Add reversal_of_id to track which entry a reversal compensates
+    try {
+      this.db.exec(`ALTER TABLE ledger_entries ADD COLUMN reversal_of_id INTEGER REFERENCES ledger_entries(id)`);
+      console.log('Added reversal_of_id column to ledger_entries table');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
+    // Index for reversal lookups
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_ledger_reversal 
+      ON ledger_entries(reversal_of_id);
+    `);
+
+    // Add affects_balance flag for non-financial manual entries
+    // When affects_balance = 0, entry appears in history but doesn't affect balance
+    try {
+      this.db.exec(`ALTER TABLE ledger_entries ADD COLUMN affects_balance INTEGER DEFAULT 1`);
+      console.log('Added affects_balance column to ledger_entries table');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
     console.log('Database tables initialized successfully');
   }
 
@@ -1407,19 +1438,21 @@ class FishMarketDB {
     this._useLedgerBalance = value;
   }
 
-  // TRANSITIONAL: Add manual ledger entry (CREDIT or DEBIT)
+  // Add manual ledger entry (CREDIT or DEBIT)
+  // affects_balance: 1 (default) = entry affects balance, 0 = descriptive record only
   addLedgerEntry(entry) {
     const stmt = this.db.prepare(`
-      INSERT INTO ledger_entries (entity_type, entity_id, entry_type, amount, reference_type, description, entry_date)
-      VALUES (@entity_type, @entity_id, @entry_type, @amount, 'manual', @description, @entry_date)
+      INSERT INTO ledger_entries (entity_type, entity_id, entry_type, amount, reference_type, description, entry_date, affects_balance)
+      VALUES (@entity_type, @entity_id, @entry_type, @amount, 'manual', @description, @entry_date, @affects_balance)
     `);
     const info = stmt.run({
       entity_type: entry.entity_type,
       entity_id: entry.entity_id,
       entry_type: entry.entry_type, // 'CREDIT' or 'DEBIT'
-      amount: entry.amount,
+      amount: entry.amount || 0,
       description: entry.description || null,
-      entry_date: entry.entry_date || null  // NULL = use created_at in queries
+      entry_date: entry.entry_date || null,  // NULL = use created_at in queries
+      affects_balance: entry.affects_balance !== undefined ? entry.affects_balance : 1
     });
     return info.lastInsertRowid;
   }
@@ -1470,6 +1503,7 @@ class FishMarketDB {
   }
 
   // Get unified account history for customer (fish transactions + manual entries)
+  // DEFAULT VIEW: Only shows active (non-voided, non-reversed) entries
   getCustomerAccountHistory(customerId) {
     const stmt = this.db.prepare(`
       SELECT 
@@ -1483,7 +1517,9 @@ class FishMarketDB {
         payment_status,
         NULL as description,
         NULL as entry_type,
-        created_at
+        created_at,
+        NULL as audit_status,
+        1 as affects_balance
       FROM transactions
       WHERE customer_id = ? AND (status IS NULL OR status = 'completed')
 
@@ -1503,11 +1539,65 @@ class FishMarketDB {
         NULL as payment_status,
         description,
         entry_type,
-        created_at
+        created_at,
+        NULL as audit_status,
+        COALESCE(affects_balance, 1) as affects_balance
       FROM ledger_entries
       WHERE entity_type = 'customer' 
         AND entity_id = ? 
         AND reference_type = 'manual'
+        AND (is_reversed IS NULL OR is_reversed = 0)
+
+      ORDER BY entry_date DESC, entry_time DESC
+    `);
+    return stmt.all(customerId, customerId);
+  }
+
+  // AUDIT VIEW: Shows ALL entries including voided/reversed with status labels
+  getCustomerAccountAuditHistory(customerId) {
+    const stmt = this.db.prepare(`
+      SELECT 
+        'sale' as record_type,
+        id,
+        transaction_date as entry_date,
+        transaction_time as entry_time,
+        total_amount as amount,
+        paid_amount,
+        balance_change,
+        payment_status,
+        NULL as description,
+        NULL as entry_type,
+        created_at,
+        CASE WHEN status = 'voided' THEN 'VOIDED' ELSE NULL END as audit_status
+      FROM transactions
+      WHERE customer_id = ?
+
+      UNION ALL
+
+      SELECT 
+        'manual_' || LOWER(entry_type) as record_type,
+        id,
+        COALESCE(entry_date, DATE(created_at)) as entry_date,
+        TIME(created_at) as entry_time,
+        amount,
+        NULL as paid_amount,
+        CASE entry_type
+          WHEN 'CREDIT' THEN -amount
+          WHEN 'DEBIT' THEN amount
+        END as balance_change,
+        NULL as payment_status,
+        description,
+        entry_type,
+        created_at,
+        CASE 
+          WHEN is_reversed = 1 THEN 'REVERSED'
+          WHEN reference_type = 'void' THEN 'REVERSAL_ENTRY'
+          ELSE NULL 
+        END as audit_status
+      FROM ledger_entries
+      WHERE entity_type = 'customer' 
+        AND entity_id = ? 
+        AND (reference_type = 'manual' OR reference_type = 'void')
 
       ORDER BY entry_date DESC, entry_time DESC
     `);
@@ -1515,6 +1605,7 @@ class FishMarketDB {
   }
 
   // Get unified account history for farmer (fish transactions + manual entries)
+  // DEFAULT VIEW: Only shows active (non-voided, non-reversed) entries
   getFarmerAccountHistory(farmerId) {
     const stmt = this.db.prepare(`
       SELECT 
@@ -1536,7 +1627,9 @@ class FishMarketDB {
           ft.fish_name,
           'N/A'
         ) as fish_name,
-        ft.commission_amount
+        ft.commission_amount,
+        NULL as audit_status,
+        1 as affects_balance
       FROM farmer_transactions ft
       WHERE ft.farmer_id = ? AND (ft.status IS NULL OR ft.status = 'completed')
 
@@ -1558,19 +1651,86 @@ class FishMarketDB {
         entry_type,
         created_at,
         NULL as fish_name,
-        NULL as commission_amount
+        NULL as commission_amount,
+        NULL as audit_status,
+        COALESCE(affects_balance, 1) as affects_balance
       FROM ledger_entries
       WHERE entity_type = 'farmer' 
         AND entity_id = ? 
         AND reference_type = 'manual'
+        AND (is_reversed IS NULL OR is_reversed = 0)
 
       ORDER BY entry_date DESC, entry_time DESC
     `);
     return stmt.all(farmerId, farmerId);
   }
 
-  // TRANSITIONAL: Calculate customer balance from legacy transactions + manual ledger entries
-  // This hybrid approach preserves legacy balance and adds manual adjustments from ledger
+  // AUDIT VIEW: Shows ALL entries including voided/reversed with status labels
+  getFarmerAccountAuditHistory(farmerId) {
+    const stmt = this.db.prepare(`
+      SELECT 
+        'purchase' as record_type,
+        ft.id,
+        ft.transaction_date as entry_date,
+        ft.transaction_time as entry_time,
+        ft.total_amount as amount,
+        ft.paid_amount,
+        ft.balance_change,
+        NULL as payment_status,
+        NULL as description,
+        NULL as entry_type,
+        ft.created_at,
+        COALESCE(
+          (SELECT GROUP_CONCAT(fti.fish_name, ', ') 
+           FROM farmer_transaction_items fti 
+           WHERE fti.transaction_id = ft.id),
+          ft.fish_name,
+          'N/A'
+        ) as fish_name,
+        ft.commission_amount,
+        CASE WHEN ft.status = 'voided' THEN 'VOIDED' ELSE NULL END as audit_status
+      FROM farmer_transactions ft
+      WHERE ft.farmer_id = ?
+
+      UNION ALL
+
+      SELECT 
+        'manual_' || LOWER(entry_type) as record_type,
+        id,
+        COALESCE(entry_date, DATE(created_at)) as entry_date,
+        TIME(created_at) as entry_time,
+        amount,
+        NULL as paid_amount,
+        CASE entry_type
+          WHEN 'DEBIT' THEN amount
+          WHEN 'CREDIT' THEN -amount
+        END as balance_change,
+        NULL as payment_status,
+        description,
+        entry_type,
+        created_at,
+        NULL as fish_name,
+        NULL as commission_amount,
+        CASE 
+          WHEN is_reversed = 1 THEN 'REVERSED'
+          WHEN reference_type = 'void' THEN 'REVERSAL_ENTRY'
+          ELSE NULL 
+        END as audit_status
+      FROM ledger_entries
+      WHERE entity_type = 'farmer' 
+        AND entity_id = ? 
+        AND (reference_type = 'manual' OR reference_type = 'void')
+
+      ORDER BY entry_date DESC, entry_time DESC
+    `);
+    return stmt.all(farmerId, farmerId);
+  }
+
+  // Calculate customer balance from legacy transactions + manual ledger entries
+  // ACCOUNTING INVARIANT: Each entry affects balance through exactly ONE mechanism:
+  // - Original entries are INCLUDED in balance (never excluded)
+  // - Reversal entries naturally cancel original entries
+  // - affects_balance flag controls whether entry participates in balance math
   getCustomerBalanceFromLedger(customerId) {
     // Get initial balance from customers table
     const initialStmt = this.db.prepare(`
@@ -1579,38 +1739,47 @@ class FishMarketDB {
     const initial = initialStmt.get(customerId)?.initial_balance || 0;
 
     // Get sum of all transaction balance changes (legacy transactions)
+    // Include ALL transactions - voided ones are canceled by reversal ledger entries
     const txnStmt = this.db.prepare(`
       SELECT COALESCE(SUM(balance_change), 0) as txn_balance
       FROM transactions
-      WHERE customer_id = ? AND status != 'voided'
+      WHERE customer_id = ?
     `);
     const txnBalance = txnStmt.get(customerId)?.txn_balance || 0;
 
-    // Get MANUAL ledger entries only (reference_type = 'manual')
-    // Credits increase outstanding (negative balance)
+    // Get all ledger entries with affects_balance = 1 (or NULL for backward compat)
+    // Include ALL entry types (manual + void) - reversal entries naturally cancel originals
+    // NO exclusion of is_reversed entries - let reversals do the work
     const creditStmt = this.db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as credits
       FROM ledger_entries 
-      WHERE entity_type = 'customer' AND entity_id = ? AND entry_type = 'CREDIT' AND reference_type = 'manual'
+      WHERE entity_type = 'customer' 
+        AND entity_id = ? 
+        AND entry_type = 'CREDIT' 
+        AND (reference_type = 'manual' OR reference_type = 'void')
+        AND (affects_balance IS NULL OR affects_balance = 1)
     `);
-    // Debits reduce outstanding / represent payments received
     const debitStmt = this.db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as debits
       FROM ledger_entries 
-      WHERE entity_type = 'customer' AND entity_id = ? AND entry_type = 'DEBIT' AND reference_type = 'manual'
+      WHERE entity_type = 'customer' 
+        AND entity_id = ? 
+        AND entry_type = 'DEBIT' 
+        AND (reference_type = 'manual' OR reference_type = 'void')
+        AND (affects_balance IS NULL OR affects_balance = 1)
     `);
 
-    const manualCredits = creditStmt.get(customerId)?.credits || 0;
-    const manualDebits = debitStmt.get(customerId)?.debits || 0;
+    const credits = creditStmt.get(customerId)?.credits || 0;
+    const debits = debitStmt.get(customerId)?.debits || 0;
 
-    // Legacy balance + manual adjustments
-    // Credits = increase outstanding (subtract from balance, making it more negative)
-    // Debits = payment received (add to balance, making it less negative)
-    return initial + txnBalance + manualDebits - manualCredits;
+    // Legacy balance + ledger adjustments
+    // Credits = increase outstanding (subtract from balance)
+    // Debits = payment received (add to balance)
+    return initial + txnBalance + debits - credits;
   }
 
-  // TRANSITIONAL: Calculate farmer balance from legacy transactions + manual ledger entries
-  // This hybrid approach preserves legacy balance and adds manual adjustments from ledger
+  // Calculate farmer balance from legacy transactions + manual ledger entries
+  // ACCOUNTING INVARIANT: Each entry affects balance through exactly ONE mechanism
   getFarmerBalanceFromLedger(farmerId) {
     // Get initial balance from farmers table
     const initialStmt = this.db.prepare(`
@@ -1619,34 +1788,188 @@ class FishMarketDB {
     const initial = initialStmt.get(farmerId)?.initial_balance || 0;
 
     // Get sum of all transaction balance changes (legacy transactions)
+    // Include ALL transactions - voided ones are canceled by reversal ledger entries
     const txnStmt = this.db.prepare(`
       SELECT COALESCE(SUM(balance_change), 0) as txn_balance
       FROM farmer_transactions
-      WHERE farmer_id = ? AND status != 'voided'
+      WHERE farmer_id = ?
     `);
     const txnBalance = txnStmt.get(farmerId)?.txn_balance || 0;
 
-    // Get MANUAL ledger entries only (reference_type = 'manual')
-    // Debits increase what we owe farmer
+    // Get all ledger entries with affects_balance = 1 (or NULL for backward compat)
+    // NO exclusion of is_reversed entries - let reversals do the work
     const debitStmt = this.db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as debits
       FROM ledger_entries 
-      WHERE entity_type = 'farmer' AND entity_id = ? AND entry_type = 'DEBIT' AND reference_type = 'manual'
+      WHERE entity_type = 'farmer' 
+        AND entity_id = ? 
+        AND entry_type = 'DEBIT' 
+        AND (reference_type = 'manual' OR reference_type = 'void')
+        AND (affects_balance IS NULL OR affects_balance = 1)
     `);
-    // Credits reduce what we owe (payment made to farmer)
     const creditStmt = this.db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as credits
       FROM ledger_entries 
-      WHERE entity_type = 'farmer' AND entity_id = ? AND entry_type = 'CREDIT' AND reference_type = 'manual'
+      WHERE entity_type = 'farmer' 
+        AND entity_id = ? 
+        AND entry_type = 'CREDIT' 
+        AND (reference_type = 'manual' OR reference_type = 'void')
+        AND (affects_balance IS NULL OR affects_balance = 1)
     `);
 
-    const manualDebits = debitStmt.get(farmerId)?.debits || 0;
-    const manualCredits = creditStmt.get(farmerId)?.credits || 0;
+    const debits = debitStmt.get(farmerId)?.debits || 0;
+    const credits = creditStmt.get(farmerId)?.credits || 0;
 
-    // Legacy balance + manual adjustments
+    // Legacy balance + ledger adjustments
     // Debits = we owe more (add to positive balance)
     // Credits = payment made (subtract from balance)
-    return initial + txnBalance + manualDebits - manualCredits;
+    return initial + txnBalance + debits - credits;
+  }
+
+  // Void a customer fish transaction (accounting-safe deletion)
+  // Status is marked 'voided' for UI visibility ONLY (to hide from account history)
+  // Balance correction happens via reversing ledger entry (not by excluding the original)
+  voidCustomerTransaction(transactionId) {
+    const txn = this.getTransactionById(transactionId);
+    if (!txn) {
+      throw new Error('Transaction not found');
+    }
+    if (txn.status === 'voided') {
+      throw new Error('Transaction is already voided');
+    }
+
+    // Use transaction for atomicity
+    const voidTxn = this.db.transaction(() => {
+      // Mark transaction as voided (for UI visibility only, NOT for balance)
+      const updateStmt = this.db.prepare(`
+        UPDATE transactions SET status = 'voided' WHERE id = ?
+      `);
+      updateStmt.run(transactionId);
+
+      // Create reversing ledger entry to cancel the original balance effect
+      // Original sale: negative balance_change = CREDIT effect
+      // Reversal: if balance_change was negative, we DEBIT to cancel; if positive, we CREDIT
+      const reverseType = txn.balance_change < 0 ? 'DEBIT' : 'CREDIT';
+      const reverseAmount = Math.abs(txn.balance_change);
+
+      const insertStmt = this.db.prepare(`
+        INSERT INTO ledger_entries (
+          entity_type, entity_id, entry_type, amount, 
+          reference_type, reference_id, description, entry_date, affects_balance
+        ) VALUES (
+          'customer', ?, ?, ?, 
+          'void', ?, ?, DATE('now'), 1
+        )
+      `);
+      insertStmt.run(
+        txn.customer_id,
+        reverseType,
+        reverseAmount,
+        transactionId,
+        `Voided transaction #${transactionId}`
+      );
+    });
+
+    voidTxn();
+    return { success: true, transactionId };
+  }
+
+  // Void a farmer fish transaction (accounting-safe deletion)
+  // Status is marked 'voided' for UI visibility ONLY
+  voidFarmerTransaction(transactionId) {
+    const txn = this.getFarmerTransactionById(transactionId);
+    if (!txn) {
+      throw new Error('Farmer transaction not found');
+    }
+    if (txn.status === 'voided') {
+      throw new Error('Transaction is already voided');
+    }
+
+    const voidTxn = this.db.transaction(() => {
+      // Mark transaction as voided (for UI visibility only)
+      const updateStmt = this.db.prepare(`
+        UPDATE farmer_transactions SET status = 'voided' WHERE id = ?
+      `);
+      updateStmt.run(transactionId);
+
+      // Create reversing ledger entry to cancel the original balance effect
+      // Farmer purchase: positive balance_change = DEBIT effect
+      // Reversal: opposite direction
+      const reverseType = txn.balance_change > 0 ? 'CREDIT' : 'DEBIT';
+      const reverseAmount = Math.abs(txn.balance_change);
+
+      const insertStmt = this.db.prepare(`
+        INSERT INTO ledger_entries (
+          entity_type, entity_id, entry_type, amount, 
+          reference_type, reference_id, description, entry_date, affects_balance
+        ) VALUES (
+          'farmer', ?, ?, ?, 
+          'void', ?, ?, DATE('now'), 1
+        )
+      `);
+      insertStmt.run(
+        txn.farmer_id,
+        reverseType,
+        reverseAmount,
+        transactionId,
+        `Voided farmer transaction #${transactionId}`
+      );
+    });
+
+    voidTxn();
+    return { success: true, transactionId };
+  }
+
+  // Reverse a manual ledger entry (accounting-safe deletion)
+  // For financial entries (affects_balance=1): creates compensating entry
+  // For non-financial entries (affects_balance=0): soft delete without reversal
+  reverseLedgerEntry(entryId) {
+    const entry = this.getLedgerEntryById(entryId);
+    if (!entry) {
+      throw new Error('Ledger entry not found');
+    }
+    if (entry.is_reversed === 1) {
+      throw new Error('Entry is already reversed');
+    }
+    if (entry.reference_type !== 'manual') {
+      throw new Error('Only manual entries can be reversed');
+    }
+
+    const reverseTxn = this.db.transaction(() => {
+      // Mark original entry as reversed (for UI visibility only, not balance)
+      const updateStmt = this.db.prepare(`
+        UPDATE ledger_entries SET is_reversed = 1 WHERE id = ?
+      `);
+      updateStmt.run(entryId);
+
+      // Only create compensating entry for financial entries
+      // Non-financial entries (affects_balance=0) don't need reversal math
+      if (entry.affects_balance !== 0) {
+        // Create compensating entry with opposite direction
+        const reverseType = entry.entry_type === 'CREDIT' ? 'DEBIT' : 'CREDIT';
+
+        const insertStmt = this.db.prepare(`
+          INSERT INTO ledger_entries (
+            entity_type, entity_id, entry_type, amount, 
+            reference_type, reversal_of_id, description, entry_date, affects_balance
+          ) VALUES (
+            ?, ?, ?, ?, 
+            'void', ?, ?, DATE('now'), 1
+          )
+        `);
+        insertStmt.run(
+          entry.entity_type,
+          entry.entity_id,
+          reverseType,
+          entry.amount,
+          entryId,
+          `Reversal of entry #${entryId}: ${entry.description || 'Manual entry'}`
+        );
+      }
+    });
+
+    reverseTxn();
+    return { success: true, entryId };
   }
 
   close() {
@@ -1655,4 +1978,5 @@ class FishMarketDB {
 }
 
 module.exports = FishMarketDB;
+
 

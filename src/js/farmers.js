@@ -7,6 +7,12 @@
   let searchTimeout;
   let suggestionsDiv;
 
+  // Current farmer being viewed (for refreshing after void/reversal)
+  let currentViewingFarmerId = null;
+
+  // Audit mode toggle state (does NOT persist across app restarts)
+  let farmerAuditModeEnabled = false;
+
   // Pagination state
   let currentPage = 1;
   let pageSize = 50;
@@ -407,6 +413,8 @@
   // View farmer details
   async function viewFarmer(id) {
     try {
+      currentViewingFarmerId = id; // Store for refresh after void/reversal
+
       const farmer = await window.electronAPI.getFarmerById(id);
       if (!farmer) {
         showAlert('Farmer not found', 'error');
@@ -439,50 +447,12 @@
       const createdDate = new Date(farmer.created_at);
       document.getElementById('viewFarmerDate').textContent = createdDate.toLocaleDateString('en-IN');
 
-      // Load unified account history (fish purchases + manual entries)
-      const history = await window.electronAPI.getFarmerAccountHistory(id);
-      const transactionsBody = document.getElementById('farmerTransactions');
+      // Load history based on audit mode
+      const history = farmerAuditModeEnabled
+        ? await window.electronAPI.getFarmerAccountAuditHistory(id)
+        : await window.electronAPI.getFarmerAccountHistory(id);
 
-      if (history.length === 0) {
-        transactionsBody.innerHTML = '<tr><td colspan="5" class="no-data">No transactions yet</td></tr>';
-      } else {
-        transactionsBody.innerHTML = history.map(record => {
-          const date = new Date(record.entry_date);
-
-          // Check if this is a manual entry or fish purchase
-          if (record.record_type === 'manual_credit' || record.record_type === 'manual_debit') {
-            // Manual entry row
-            const typeLabel = record.record_type === 'manual_credit' ? 'Manual Credit' : 'Manual Debit';
-            const typeClass = record.record_type === 'manual_credit' ? 'partial' : 'paid';
-            return `
-            <tr class="transaction-row-clickable" onclick="viewFarmerManualEntryReceipt(${record.id}, '${farmer.name}', ${farmer.balance})">
-              <td>${date.toLocaleDateString('en-IN')}</td>
-              <td><span class="status-badge ${typeClass}">${typeLabel}</span></td>
-              <td>Rs.${record.amount.toFixed(2)}</td>
-              <td>${record.description || '-'}</td>
-              <td class="action-buttons">
-                <span style="color: var(--text-secondary); font-size: 12px;">View</span>
-              </td>
-            </tr>
-          `;
-          } else {
-            // Fish purchase row
-            return `
-            <tr class="transaction-row-clickable" onclick="viewFarmerTransactionReceipt(${record.id})">
-              <td>${date.toLocaleDateString('en-IN')}</td>
-              <td><span class="status-badge active">Purchase</span></td>
-              <td>Rs.${record.amount.toFixed(2)}</td>
-              <td>${record.fish_name || 'N/A'}</td>
-              <td class="action-buttons">
-                <button class="action-btn edit" onclick="event.stopPropagation(); editFarmerTransactionFromFarmer(${record.id})" title="Edit">
-                  <img src="../assets/edit.png" alt="Edit" style="width: 16px; height: 16px;">
-                </button>
-              </td>
-            </tr>
-          `;
-          }
-        }).join('');
-      }
+      renderFarmerHistory(history, farmer);
 
       document.getElementById('viewFarmerModal').classList.add('active');
     } catch (error) {
@@ -491,9 +461,156 @@
     }
   }
 
+  // Render farmer transaction history (separated for audit mode toggle)
+  function renderFarmerHistory(history, farmer) {
+    const transactionsBody = document.getElementById('farmerTransactions');
+
+    if (history.length === 0) {
+      transactionsBody.innerHTML = '<tr><td colspan="6" class="no-data">No transactions yet</td></tr>';
+      return;
+    }
+
+    transactionsBody.innerHTML = history.map(record => {
+      const date = new Date(record.entry_date);
+      const auditStatus = record.audit_status;
+
+      // In audit mode, show status labels and no action buttons
+      if (auditStatus) {
+        // Voided/Reversed/Reversal entry - read-only display
+        const statusLabel = auditStatus === 'VOIDED' ? '🚫 VOIDED'
+          : auditStatus === 'REVERSED' ? '↩️ REVERSED'
+            : '📋 REVERSAL';
+        const recordLabel = record.record_type === 'purchase' ? 'Purchase'
+          : record.record_type.startsWith('manual_') ? (record.record_type === 'manual_credit' ? 'Manual Credit' : 'Manual Debit')
+            : 'Sale';
+
+        return `
+        <tr class="audit-row" style="opacity: 0.6; background: #f5f5f5;">
+          <td>${date.toLocaleDateString('en-IN')}</td>
+          <td><span class="status-badge" style="background: #999;">${recordLabel}</span></td>
+          <td>Rs.${record.amount.toFixed(2)}</td>
+          <td>${record.description || record.fish_name || '-'}</td>
+          <td><span style="color: #d32f2f; font-weight: bold; font-size: 11px;">${statusLabel}</span></td>
+          <td class="action-buttons">
+            <span style="color: var(--text-secondary); font-size: 11px;">View Receipt</span>
+          </td>
+        </tr>
+      `;
+      }
+
+      // Normal mode - show active entries with action buttons
+      if (record.record_type === 'manual_credit' || record.record_type === 'manual_debit') {
+        // Manual entry row with delete button
+        // Check if it's a NOTE (non-financial) entry
+        const isNote = record.affects_balance === 0;
+        const typeLabel = isNote ? 'Note' : (record.record_type === 'manual_credit' ? 'Manual Credit' : 'Manual Debit');
+        const typeClass = isNote ? 'active' : (record.record_type === 'manual_credit' ? 'partial' : 'paid');
+        const amountDisplay = isNote && record.amount === 0 ? '-' : `Rs.${record.amount.toFixed(2)}`;
+        return `
+        <tr class="transaction-row-clickable" onclick="viewFarmerManualEntryReceipt(${record.id}, '${farmer.name.replace(/'/g, "\\'")}', ${farmer.balance})">
+          <td>${date.toLocaleDateString('en-IN')}</td>
+          <td><span class="status-badge ${typeClass}">${typeLabel}</span></td>
+          <td>${amountDisplay}</td>
+          <td>${record.description || '-'}</td>
+          <td>-</td>
+          <td class="action-buttons">
+            <button class="action-btn delete" onclick="event.stopPropagation(); reverseFarmerManualEntry(${record.id})" title="Delete Entry">
+              <img src="../assets/delete.png" alt="Delete" style="width: 16px; height: 16px;">
+            </button>
+          </td>
+        </tr>
+      `;
+      } else {
+        // Fish purchase row with delete button
+        return `
+        <tr class="transaction-row-clickable" onclick="viewFarmerTransactionReceipt(${record.id})">
+          <td>${date.toLocaleDateString('en-IN')}</td>
+          <td><span class="status-badge active">Purchase</span></td>
+          <td>Rs.${record.amount.toFixed(2)}</td>
+          <td>${record.fish_name || 'N/A'}</td>
+          <td>-</td>
+          <td class="action-buttons">
+            <button class="action-btn edit" onclick="event.stopPropagation(); editFarmerTransactionFromFarmer(${record.id})" title="Edit">
+              <img src="../assets/edit.png" alt="Edit" style="width: 16px; height: 16px;">
+            </button>
+            <button class="action-btn delete" onclick="event.stopPropagation(); voidFarmerTransaction(${record.id})" title="Delete Transaction">
+              <img src="../assets/delete.png" alt="Delete" style="width: 16px; height: 16px;">
+            </button>
+          </td>
+        </tr>
+      `;
+      }
+    }).join('');
+  }
+
+  // Toggle farmer audit mode (does NOT persist across app restarts)
+  function toggleFarmerAuditMode() {
+    farmerAuditModeEnabled = !farmerAuditModeEnabled;
+    const toggleBtn = document.getElementById('farmerAuditModeToggle');
+    if (toggleBtn) {
+      toggleBtn.textContent = farmerAuditModeEnabled ? '📋 Audit Mode ON' : '📋 Audit Mode';
+      toggleBtn.style.background = farmerAuditModeEnabled ? '#d32f2f' : '';
+      toggleBtn.style.color = farmerAuditModeEnabled ? 'white' : '';
+    }
+    // Refresh current view
+    if (currentViewingFarmerId) {
+      viewFarmer(currentViewingFarmerId);
+    }
+  }
+
+  // Void a farmer fish transaction (accounting-safe deletion)
+  async function voidFarmerTransaction(txnId) {
+    const confirmMsg = 'Delete this transaction?\n\n' +
+      'This will create a reversing entry and update the balance. ' +
+      'The transaction will be hidden from history but preserved for audit.';
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      await window.electronAPI.voidFarmerTransaction(txnId);
+      showAlert('Transaction deleted successfully', 'success');
+      // Refresh view
+      if (currentViewingFarmerId) {
+        await viewFarmer(currentViewingFarmerId);
+      }
+    } catch (error) {
+      console.error('Error voiding farmer transaction:', error);
+      showAlert('Failed to delete transaction: ' + error.message, 'error');
+    }
+  }
+
+  // Reverse a farmer manual ledger entry (accounting-safe deletion)
+  async function reverseFarmerManualEntry(entryId) {
+    const confirmMsg = 'Delete this manual entry?\n\n' +
+      'This will create a compensating entry and update the balance.';
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      await window.electronAPI.reverseLedgerEntry(entryId);
+      showAlert('Entry deleted successfully', 'success');
+      // Refresh view
+      if (currentViewingFarmerId) {
+        await viewFarmer(currentViewingFarmerId);
+      }
+    } catch (error) {
+      console.error('Error reversing farmer entry:', error);
+      showAlert('Failed to delete entry: ' + error.message, 'error');
+    }
+  }
+
   // Close view farmer modal
   function closeViewFarmerModal() {
     document.getElementById('viewFarmerModal').classList.remove('active');
+    currentViewingFarmerId = null;
+    // Reset audit mode when closing modal
+    farmerAuditModeEnabled = false;
+    const toggleBtn = document.getElementById('farmerAuditModeToggle');
+    if (toggleBtn) {
+      toggleBtn.textContent = '📋 Audit Mode';
+      toggleBtn.style.background = '';
+      toggleBtn.style.color = '';
+    }
   }
 
   // Show alert message
@@ -870,5 +987,11 @@
   window.saveFarmerReceiptAsPDF = saveFarmerReceiptAsPDF;
   window.viewFarmerManualEntryReceipt = viewFarmerManualEntryReceipt;
 
+  // Void/reversal and audit mode functions
+  window.toggleFarmerAuditMode = toggleFarmerAuditMode;
+  window.voidFarmerTransaction = voidFarmerTransaction;
+  window.reverseFarmerManualEntry = reverseFarmerManualEntry;
+
 })(); // End of IIFE
+
 
