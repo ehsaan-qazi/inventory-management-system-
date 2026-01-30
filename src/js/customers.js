@@ -446,9 +446,14 @@
       document.getElementById('viewCustomerDate').textContent = createdDate.toLocaleDateString('en-IN');
 
       // Load history based on audit mode
-      const history = auditModeEnabled
+      // getCustomerAccountHistory returns {data, total, hasMore} - extract data array
+      // getCustomerAccountAuditHistory returns array directly (not paginated yet)
+      const historyResult = auditModeEnabled
         ? await window.electronAPI.getCustomerAccountAuditHistory(id)
         : await window.electronAPI.getCustomerAccountHistory(id);
+
+      // Handle both paginated response {data: array} and direct array
+      const history = Array.isArray(historyResult) ? historyResult : (historyResult.data || []);
 
       renderCustomerHistory(history, customer);
 
@@ -503,7 +508,8 @@
         const isNote = record.affects_balance === 0;
         const typeLabel = isNote ? 'Note' : (record.record_type === 'manual_credit' ? 'Manual Credit' : 'Manual Debit');
         const typeClass = isNote ? 'active' : (record.record_type === 'manual_credit' ? 'partial' : 'paid');
-        const amountDisplay = isNote && record.amount === 0 ? '-' : `Rs.${record.amount.toFixed(2)}`;
+        // Handle NULL amounts for non-financial entries
+        const amountDisplay = (record.amount === null || record.amount === undefined || (isNote && record.amount === 0)) ? '-' : `Rs.${record.amount.toFixed(2)}`;
         return `
         <tr class="transaction-row-clickable" onclick="viewManualEntryReceipt(${record.id}, '${customer.name.replace(/'/g, "\\'")}', ${customer.balance})">
           <td>${date.toLocaleDateString('en-IN')}</td>

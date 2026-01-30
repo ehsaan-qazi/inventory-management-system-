@@ -115,9 +115,12 @@ function formatWeight(totalKg) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadCustomers();
-  await loadFishCategories();
-  await loadTransactions();
+  // Parallel fetch - all independent read operations
+  await Promise.all([
+    loadCustomers(),
+    loadFishCategories(),
+    loadTransactions()
+  ]);
   setupCustomerSearch();
 
   // Restore in-progress transaction if exists

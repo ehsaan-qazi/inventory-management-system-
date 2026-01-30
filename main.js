@@ -64,15 +64,6 @@ function createWindow() {
     }
   });
 
-  // Additional handler for when app becomes active
-  app.on('browser-window-focus', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('window-focus-restored');
-      if (!mainWindow.webContents.isFocused()) {
-        mainWindow.webContents.focus();
-      }
-    }
-  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -89,6 +80,16 @@ app.whenReady().then(() => {
   setupIPCHandlers();
 
   createWindow();
+
+  // Global focus handler - registered ONCE outside createWindow to prevent accumulation
+  app.on('browser-window-focus', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('window-focus-restored');
+      if (!mainWindow.webContents.isFocused()) {
+        mainWindow.webContents.focus();
+      }
+    }
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -299,6 +300,8 @@ function setupIPCHandlers() {
         width: 800,
         height: 600,
         show: false,
+        parent: mainWindow,
+        modal: false,
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true

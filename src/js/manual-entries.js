@@ -8,9 +8,12 @@ let currentEntityType = 'customer';
 let selectedEntity = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
-    await loadCustomers();
-    await loadFarmers();
-    await loadRecentEntries();
+    // Parallel fetch - all independent read operations
+    await Promise.all([
+        loadCustomers(),
+        loadFarmers(),
+        loadRecentEntries()
+    ]);
     setupEntitySearch();
     initializeDateField();
 
@@ -32,18 +35,26 @@ function initializeDateField() {
 // Load customers for search
 async function loadCustomers() {
     try {
-        customers = await window.electronAPI.getCustomers();
+        const result = await window.electronAPI.getCustomers();
+        // Handle paginated response
+        customers = Array.isArray(result) ? result : (result.data || []);
     } catch (error) {
         console.error('Error loading customers:', error);
+        showAlert('Failed to load customers. Try refreshing.', 'error');
+        customers = []; // Graceful degradation
     }
 }
 
 // Load farmers for search
 async function loadFarmers() {
     try {
-        farmers = await window.electronAPI.getFarmers();
+        const result = await window.electronAPI.getFarmers();
+        // Handle paginated response
+        farmers = Array.isArray(result) ? result : (result.data || []);
     } catch (error) {
         console.error('Error loading farmers:', error);
+        showAlert('Failed to load farmers. Try refreshing.', 'error');
+        farmers = []; // Graceful degradation
     }
 }
 

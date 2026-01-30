@@ -448,9 +448,14 @@
       document.getElementById('viewFarmerDate').textContent = createdDate.toLocaleDateString('en-IN');
 
       // Load history based on audit mode
-      const history = farmerAuditModeEnabled
+      // getFarmerAccountHistory returns {data, total, hasMore} - extract data array
+      // getFarmerAccountAuditHistory returns array directly (not paginated yet)
+      const historyResult = farmerAuditModeEnabled
         ? await window.electronAPI.getFarmerAccountAuditHistory(id)
         : await window.electronAPI.getFarmerAccountHistory(id);
+
+      // Handle both paginated response {data: array} and direct array
+      const history = Array.isArray(historyResult) ? historyResult : (historyResult.data || []);
 
       renderFarmerHistory(history, farmer);
 
@@ -505,7 +510,8 @@
         const isNote = record.affects_balance === 0;
         const typeLabel = isNote ? 'Note' : (record.record_type === 'manual_credit' ? 'Manual Credit' : 'Manual Debit');
         const typeClass = isNote ? 'active' : (record.record_type === 'manual_credit' ? 'partial' : 'paid');
-        const amountDisplay = isNote && record.amount === 0 ? '-' : `Rs.${record.amount.toFixed(2)}`;
+        // Handle NULL amounts for non-financial entries
+        const amountDisplay = (record.amount === null || record.amount === undefined || (isNote && record.amount === 0)) ? '-' : `Rs.${record.amount.toFixed(2)}`;
         return `
         <tr class="transaction-row-clickable" onclick="viewFarmerManualEntryReceipt(${record.id}, '${farmer.name.replace(/'/g, "\\'")}', ${farmer.balance})">
           <td>${date.toLocaleDateString('en-IN')}</td>

@@ -44,8 +44,93 @@ class FishMarketDB {
     // Initialize tables
     this.initializeTables();
 
+    // PRODUCTION HARDENING: Verify database integrity on startup
+    this.verifyDatabaseIntegrity();
+
     // Setup auto-backup (Issue 26)
     this.setupAutoBackup();
+  }
+
+  // ============================================================================
+  // OPERATIONAL LOGGING (Production Observability)
+  // Structured logging for audit and debugging - no sensitive data
+  // ============================================================================
+
+  /**
+   * Log structured operational event
+   * @param {string} eventType - Type of event (LEDGER_INSERT, REVERSAL, VOID, etc.)
+   * @param {object} data - Event data (entity_type, entity_id, entry_id, etc.)
+   */
+  logOperationalEvent(eventType, data) {
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+      timestamp,
+      event: eventType,
+      ...data
+    };
+
+    // Log in development, structured format in production
+    if (this.isDev) {
+      console.log(`[AUDIT] ${eventType}:`, JSON.stringify(logEntry));
+    } else {
+      // In production, write to a dedicated audit log file could be added here
+      console.log(JSON.stringify(logEntry));
+    }
+  }
+
+  // ============================================================================
+  // DATABASE INTEGRITY CHECKS (Backup/Recovery Readiness)
+  // Fail fast on corruption - no silent data loss
+  // ============================================================================
+
+  /**
+   * Verify database integrity on startup
+   * Checks for missing tables and index corruption
+   * Fails fast with clear error if problems detected
+   */
+  verifyDatabaseIntegrity() {
+    const requiredTables = [
+      'customers', 'farmers', 'fish_categories',
+      'transactions', 'transaction_items',
+      'farmer_transactions', 'farmer_transaction_items',
+      'ledger_entries', 'daily_summary'
+    ];
+
+    // Check required tables exist
+    const tablesStmt = this.db.prepare(`
+      SELECT name FROM sqlite_master WHERE type='table'
+    `);
+    const existingTables = tablesStmt.all().map(t => t.name);
+
+    const missingTables = requiredTables.filter(t => !existingTables.includes(t));
+    if (missingTables.length > 0) {
+      const error = `DATABASE INTEGRITY ERROR: Missing tables: ${missingTables.join(', ')}`;
+      console.error(error);
+      // Don't throw in dev mode to allow fresh databases
+      if (!this.isDev && existingTables.length > 0) {
+        throw new Error(error);
+      }
+    }
+
+    // Run SQLite integrity check
+    try {
+      const integrityResult = this.db.pragma('integrity_check');
+      if (integrityResult[0].integrity_check !== 'ok') {
+        const error = `DATABASE INTEGRITY ERROR: SQLite integrity check failed: ${JSON.stringify(integrityResult)}`;
+        console.error(error);
+        throw new Error(error);
+      }
+    } catch (e) {
+      if (e.message.includes('DATABASE INTEGRITY ERROR')) {
+        throw e;
+      }
+      console.warn('Integrity check warning:', e.message);
+    }
+
+    // Log successful startup
+    if (this.isDev) {
+      console.log('Database integrity check passed');
+    }
   }
 
   initializeTables() {
@@ -415,6 +500,88 @@ class FishMarketDB {
       // Column already exists, ignore
     }
 
+    // ==== OPTIMIZED INDEXES FOR BALANCE COMPUTATION (Architecture Contract v1.0) ====
+    // Composite index for computeAccountBalance() queries
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_ledger_balance_lookup 
+      ON ledger_entries(entity_type, entity_id, affects_balance, entry_type);
+    `);
+
+    // Index for affects_balance filtering
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_ledger_affects_balance 
+      ON ledger_entries(affects_balance);
+    `);
+
+    // ==== SCHEMA EVOLUTION v1.1 (Architecture Contract Enforcement) ====
+
+    // Add is_void column - marks entries whose originating transaction was voided
+    // This is a UI visibility flag, NOT a balance calculation flag
+    try {
+      this.db.exec(`ALTER TABLE ledger_entries ADD COLUMN is_void INTEGER NOT NULL DEFAULT 0`);
+      console.log('Added is_void column to ledger_entries table');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
+    // Add entry_time column - stores time component for transaction ordering
+    try {
+      this.db.exec(`ALTER TABLE ledger_entries ADD COLUMN entry_time TIME`);
+      console.log('Added entry_time column to ledger_entries table');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
+    // ==== ADDITIONAL INDEXES FOR 100-500 TX/DAY SCALE ====
+
+    // Index for is_void filtering in UI queries
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_ledger_is_void 
+      ON ledger_entries(is_void);
+    `);
+
+    // Index for reference lookups (find ledger entries by transaction)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_ledger_reference 
+      ON ledger_entries(reference_type, reference_id);
+    `);
+
+    // Index for is_reversed filtering in UI queries
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_ledger_is_reversed 
+      ON ledger_entries(is_reversed);
+    `);
+
+    // ==== SAFE BACKFILL MIGRATION (Idempotent) ====
+    // Set affects_balance = 1 for any legacy rows where it's NULL
+    // This ensures all existing entries participate in balance calculation
+    try {
+      const backfillResult = this.db.prepare(`
+        UPDATE ledger_entries 
+        SET affects_balance = 1 
+        WHERE affects_balance IS NULL
+      `).run();
+      if (backfillResult.changes > 0) {
+        console.log(`Backfilled ${backfillResult.changes} ledger entries with affects_balance = 1`);
+      }
+    } catch (e) {
+      console.log('Backfill skipped or already complete');
+    }
+
+    // Set is_void = 0 for any legacy rows where it was added as NULL
+    try {
+      const voidBackfillResult = this.db.prepare(`
+        UPDATE ledger_entries 
+        SET is_void = 0 
+        WHERE is_void IS NULL
+      `).run();
+      if (voidBackfillResult.changes > 0) {
+        console.log(`Backfilled ${voidBackfillResult.changes} ledger entries with is_void = 0`);
+      }
+    } catch (e) {
+      console.log('is_void backfill skipped or already complete');
+    }
+
     console.log('Database tables initialized successfully');
   }
 
@@ -512,30 +679,10 @@ class FishMarketDB {
     return customer;
   }
 
-  // Calculate customer balance dynamically from initial_balance + transactions (Issue 3 & 7)
+  // Calculate customer balance using centralized ledger computation
+  // Architecture Contract v1.0: Ledger is the SINGLE source of truth
   getCustomerBalance(customerId) {
-    // TRANSITIONAL: Delegate to ledger-based balance when feature flag is enabled
-    if (this.useLedgerBalance) {
-      return this.getCustomerBalanceFromLedger(customerId);
-    }
-
-    // Get initial balance from customers table
-    const initialStmt = this.db.prepare(`
-      SELECT COALESCE(initial_balance, 0) as initial_balance FROM customers WHERE id = ?
-    `);
-    const initialResult = initialStmt.get(customerId);
-    const initialBalance = initialResult ? initialResult.initial_balance : 0;
-
-    // Get sum of all transaction balance changes
-    const txnStmt = this.db.prepare(`
-      SELECT COALESCE(SUM(balance_change), 0) as txn_balance
-      FROM transactions
-      WHERE customer_id = ? AND status != 'voided'
-    `);
-    const txnResult = txnStmt.get(customerId);
-    const txnBalance = txnResult ? txnResult.txn_balance : 0;
-
-    return initialBalance + txnBalance;
+    return this.computeAccountBalance('customer', customerId);
   }
 
   addCustomer(customer) {
@@ -578,7 +725,13 @@ class FishMarketDB {
     });
   }
 
+  // DEPRECATED: Direct balance updates are not allowed per Architecture Contract v1.0
+  // Balance is computed from ledger entries only.
+  // This function is kept for backward compatibility but logs a warning.
   updateCustomerBalance(id, balance) {
+    if (this.isDev) {
+      console.warn(`DEPRECATED: updateCustomerBalance() called for customer ${id}. Balance should be computed from ledger.`);
+    }
     const stmt = this.db.prepare(`
       UPDATE customers 
       SET balance = @balance, updated_at = CURRENT_TIMESTAMP
@@ -688,30 +841,10 @@ class FishMarketDB {
     return farmer;
   }
 
-  // Calculate farmer balance dynamically from initial_balance + transactions
+  // Calculate farmer balance using centralized ledger computation
+  // Architecture Contract v1.0: Ledger is the SINGLE source of truth
   getFarmerBalance(farmerId) {
-    // TRANSITIONAL: Delegate to ledger-based balance when feature flag is enabled
-    if (this.useLedgerBalance) {
-      return this.getFarmerBalanceFromLedger(farmerId);
-    }
-
-    // Get initial balance from farmers table
-    const initialStmt = this.db.prepare(`
-      SELECT COALESCE(initial_balance, 0) as initial_balance FROM farmers WHERE id = ?
-    `);
-    const initialResult = initialStmt.get(farmerId);
-    const initialBalance = initialResult ? initialResult.initial_balance : 0;
-
-    // Get sum of all transaction balance changes
-    const txnStmt = this.db.prepare(`
-      SELECT COALESCE(SUM(balance_change), 0) as txn_balance
-      FROM farmer_transactions
-      WHERE farmer_id = ? AND status != 'voided'
-    `);
-    const txnResult = txnStmt.get(farmerId);
-    const txnBalance = txnResult ? txnResult.txn_balance : 0;
-
-    return initialBalance + txnBalance;
+    return this.computeAccountBalance('farmer', farmerId);
   }
 
   addFarmer(farmer) {
@@ -754,7 +887,13 @@ class FishMarketDB {
     });
   }
 
+  // DEPRECATED: Direct balance updates are not allowed per Architecture Contract v1.0
+  // Balance is computed from ledger entries only.
+  // This function is kept for backward compatibility but logs a warning.
   updateFarmerBalance(id, balance) {
+    if (this.isDev) {
+      console.warn(`DEPRECATED: updateFarmerBalance() called for farmer ${id}. Balance should be computed from ledger.`);
+    }
     const stmt = this.db.prepare(`
       UPDATE farmers 
       SET balance = @balance, updated_at = CURRENT_TIMESTAMP
@@ -931,25 +1070,29 @@ class FishMarketDB {
         });
       }
 
-      // Update customer balance
-      this.updateCustomerBalance(txn.customer_id, txn.balance_after);
+      // Architecture Contract v1.0: Balance is computed from ledger ONLY
+      // DO NOT call updateCustomerBalance here - removed per contract
 
       // Update daily summary
       this.updateDailySummary(txn.transaction_date, txn.total_amount, txn.paid_amount, txn.balance_change);
 
-      // TRANSITIONAL: Insert ledger entry for sale (CREDIT to customer account)
+      // Insert ledger entry for sale (CREDIT to customer account)
       // balance_change is negative when customer owes money (outstanding)
       // We record the absolute value as a CREDIT entry
-      if (txn.balance_change !== 0) {
-        const ledgerStmt = this.db.prepare(`
-          INSERT INTO ledger_entries (entity_type, entity_id, entry_type, amount, reference_type, reference_id, description)
-          VALUES ('customer', ?, ?, ?, 'sale', ?, 'Sale transaction')
-        `);
-        // If balance_change is negative (customer owes), it's a CREDIT
-        // If balance_change is positive (customer overpaid/prepaid), it's a DEBIT
-        const entryType = txn.balance_change < 0 ? 'CREDIT' : 'DEBIT';
-        ledgerStmt.run(txn.customer_id, entryType, Math.abs(txn.balance_change), transactionId);
-      }
+      // Architecture Contract: Every sale creates exactly ONE ledger entry
+      const ledgerStmt = this.db.prepare(`
+        INSERT INTO ledger_entries (entity_type, entity_id, entry_type, amount, reference_type, reference_id, description, entry_date, affects_balance)
+        VALUES ('customer', ?, ?, ?, 'sale', ?, 'Sale transaction', ?, 1)
+      `);
+      // If balance_change is negative (customer owes), it's a CREDIT
+      // If balance_change is positive (customer overpaid/prepaid), it's a DEBIT
+      // If balance_change is 0, still create entry with 0 amount for audit trail
+      const entryType = txn.balance_change <= 0 ? 'CREDIT' : 'DEBIT';
+      ledgerStmt.run(txn.customer_id, entryType, Math.abs(txn.balance_change), transactionId, txn.transaction_date);
+
+      // WRITE-TIME ATOMICITY: Sync balance cache inside the same transaction
+      // If this fails, the entire transaction rolls back (no partial writes)
+      this.syncBalanceCache('customer', txn.customer_id);
 
       return transactionId;
     });
@@ -1212,22 +1355,26 @@ class FishMarketDB {
         }
       }
 
-      // Update farmer balance
-      this.updateFarmerBalance(txn.farmer_id, txn.balance_after);
+      // Architecture Contract v1.0: Balance is computed from ledger ONLY
+      // DO NOT call updateFarmerBalance here - removed per contract
 
-      // TRANSITIONAL: Insert ledger entry for farmer purchase
+      // Insert ledger entry for farmer purchase
       // balance_change is positive when we owe the farmer (DEBIT to our account)
       // balance_change is negative if farmer was overpaid (CREDIT)
-      if (txn.balance_change !== 0) {
-        const ledgerStmt = this.db.prepare(`
-          INSERT INTO ledger_entries (entity_type, entity_id, entry_type, amount, reference_type, reference_id, description)
-          VALUES ('farmer', ?, ?, ?, 'purchase', ?, 'Farmer purchase transaction')
-        `);
-        // If balance_change is positive (we owe farmer), it's a DEBIT
-        // If balance_change is negative (farmer was overpaid), it's a CREDIT
-        const entryType = txn.balance_change > 0 ? 'DEBIT' : 'CREDIT';
-        ledgerStmt.run(txn.farmer_id, entryType, Math.abs(txn.balance_change), transactionId);
-      }
+      // Architecture Contract: Every purchase creates exactly ONE ledger entry
+      const ledgerStmt = this.db.prepare(`
+        INSERT INTO ledger_entries (entity_type, entity_id, entry_type, amount, reference_type, reference_id, description, entry_date, affects_balance)
+        VALUES ('farmer', ?, ?, ?, 'purchase', ?, 'Farmer purchase transaction', ?, 1)
+      `);
+      // If balance_change is positive (we owe farmer), it's a DEBIT
+      // If balance_change is negative (farmer was overpaid), it's a CREDIT
+      // If balance_change is 0, still create entry for audit trail
+      const entryType = txn.balance_change >= 0 ? 'DEBIT' : 'CREDIT';
+      ledgerStmt.run(txn.farmer_id, entryType, Math.abs(txn.balance_change), transactionId, txn.transaction_date);
+
+      // WRITE-TIME ATOMICITY: Sync balance cache inside the same transaction
+      // If this fails, the entire transaction rolls back (no partial writes)
+      this.syncBalanceCache('farmer', txn.farmer_id);
 
       return transactionId;
     });
@@ -1423,38 +1570,247 @@ class FishMarketDB {
   }
 
   // ============================================================================
-  // TRANSITIONAL: Ledger Entry Operations
-  // These methods support the new append-only ledger system for balance tracking
+  // LEDGER-BASED BALANCE COMPUTATION (Architecture Contract v1.0)
+  // The ledger is the SINGLE source of truth for account balances.
+  // Balance = initial_balance + SUM(ledger_entries WHERE affects_balance = 1)
   // ============================================================================
 
-  // TRANSITIONAL: Feature flag for ledger-based balance calculation
-  // Set to true to use ledger aggregation, false for legacy balance calculation
-  // Default: false (legacy mode) - set to true when ready to switch
+  /**
+   * CENTRAL BALANCE COMPUTATION - Single Source of Truth
+   * 
+   * Computes account balance using ONLY the ledger entries.
+   * This function implements the Architecture Contract v1.0:
+   * - Balance = initial_balance + SUM(DEBIT) - SUM(CREDIT) from ledger
+   * - No reference to transactions tables (those are for history only)
+   * - Reversals naturally cancel originals (no status filtering)
+   * - Only entries with affects_balance = 1 participate in calculation
+   *
+   * @param {string} entityType - 'customer' or 'farmer'
+   * @param {number} entityId - The entity's primary key
+   * @returns {number} The computed balance
+   */
+  computeAccountBalance(entityType, entityId) {
+    // Get initial_balance from the entity table
+    const tableName = entityType === 'customer' ? 'customers' : 'farmers';
+    const initialStmt = this.db.prepare(`
+      SELECT COALESCE(initial_balance, 0) as initial_balance 
+      FROM ${tableName} WHERE id = ?
+    `);
+    const initialResult = initialStmt.get(entityId);
+    const initialBalance = initialResult ? initialResult.initial_balance : 0;
+
+    // Compute balance from ALL ledger entries where affects_balance = 1
+    // DEBIT = payment received (increases balance for customer, decreases for farmer debt)
+    // CREDIT = amount owed (decreases balance for customer, increases for farmer debt)
+    // 
+    // For CUSTOMERS: positive balance = credit available, negative = owes money
+    //   DEBIT entries (payments) ADD to balance
+    //   CREDIT entries (charges) SUBTRACT from balance
+    //
+    // For FARMERS: positive balance = we owe them, negative = they owe us
+    //   DEBIT entries (purchases) ADD to balance (we owe more)
+    //   CREDIT entries (payments) SUBTRACT from balance (we paid them)
+    const balanceStmt = this.db.prepare(`
+      SELECT 
+        COALESCE(SUM(CASE WHEN entry_type = 'DEBIT' THEN amount ELSE 0 END), 0) as total_debits,
+        COALESCE(SUM(CASE WHEN entry_type = 'CREDIT' THEN amount ELSE 0 END), 0) as total_credits
+      FROM ledger_entries 
+      WHERE entity_type = ? 
+        AND entity_id = ? 
+        AND (affects_balance IS NULL OR affects_balance = 1)
+    `);
+    const result = balanceStmt.get(entityType, entityId);
+
+    // Balance = initial + debits - credits
+    return initialBalance + (result.total_debits - result.total_credits);
+  }
+
+  /**
+   * Verify that computed balance matches cached balance (safety check)
+   * Logs error if mismatch detected - does NOT auto-fix per contract
+   * 
+   * @param {string} entityType - 'customer' or 'farmer'
+   * @param {number} entityId - The entity's primary key
+   */
+  verifyBalanceIntegrity(entityType, entityId) {
+    const tableName = entityType === 'customer' ? 'customers' : 'farmers';
+
+    // Get cached balance
+    const cachedStmt = this.db.prepare(`SELECT balance FROM ${tableName} WHERE id = ?`);
+    const cachedResult = cachedStmt.get(entityId);
+    const cachedBalance = cachedResult ? cachedResult.balance : 0;
+
+    // Compute actual balance
+    const computedBalance = this.computeAccountBalance(entityType, entityId);
+
+    // Check for mismatch (allow small floating point tolerance)
+    const tolerance = 0.01;
+    if (Math.abs(cachedBalance - computedBalance) > tolerance) {
+      console.error(`BALANCE INTEGRITY ERROR: ${entityType} ${entityId}`);
+      console.error(`  Cached: ${cachedBalance}, Computed: ${computedBalance}`);
+      console.error(`  Difference: ${cachedBalance - computedBalance}`);
+      // DO NOT auto-fix per Architecture Contract - only log
+    }
+
+    return { cached: cachedBalance, computed: computedBalance, match: Math.abs(cachedBalance - computedBalance) <= tolerance };
+  }
+
+  /**
+   * SINGLE BALANCE MUTATION GATEWAY
+   * 
+   * This is the ONLY function that may update balance cache columns.
+   * All write paths that affect balance must call this function.
+   * 
+   * Architecture Contract v1.0: Balance cache is optional and may be stale.
+   * The ledger is the source of truth; this just keeps cache synchronized.
+   * 
+   * @param {string} entityType - 'customer' or 'farmer'
+   * @param {number} entityId - The entity's primary key
+   * @param {number} deltaAmount - Signed amount (+ or -) to apply
+   */
+  applyBalanceDelta(entityType, entityId, deltaAmount) {
+    // Guard: Only apply if delta is non-zero
+    if (deltaAmount === 0 || deltaAmount === null || deltaAmount === undefined) {
+      return;
+    }
+
+    const tableName = entityType === 'customer' ? 'customers' : 'farmers';
+
+    // Update balance cache atomically
+    const stmt = this.db.prepare(`
+      UPDATE ${tableName} 
+      SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `);
+    stmt.run(deltaAmount, entityId);
+
+    // Verify integrity after update (development only)
+    if (this.isDev) {
+      this.verifyBalanceIntegrity(entityType, entityId);
+    }
+  }
+
+  /**
+   * Sync balance cache from ledger (recompute and store)
+   * Use when cache may be out of sync with ledger.
+   * 
+   * @param {string} entityType - 'customer' or 'farmer'
+   * @param {number} entityId - The entity's primary key
+   */
+  syncBalanceCache(entityType, entityId) {
+    const computedBalance = this.computeAccountBalance(entityType, entityId);
+    const tableName = entityType === 'customer' ? 'customers' : 'farmers';
+
+    const stmt = this.db.prepare(`
+      UPDATE ${tableName} 
+      SET balance = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `);
+    stmt.run(computedBalance, entityId);
+
+    return computedBalance;
+  }
+
+  // Feature flag - DEPRECATED, kept for backward compatibility
+  // Balance is now always computed from ledger
   get useLedgerBalance() {
-    return this._useLedgerBalance || false;
+    return true; // Always use ledger
   }
 
   set useLedgerBalance(value) {
-    this._useLedgerBalance = value;
+    // No-op - ledger is always the source of truth now
+    if (!value && this.isDev) {
+      console.warn('useLedgerBalance setter is deprecated. Ledger is always the source of truth.');
+    }
   }
 
   // Add manual ledger entry (CREDIT or DEBIT)
-  // affects_balance: 1 (default) = entry affects balance, 0 = descriptive record only
+  // 
+  // MODE A: Financial Entry (affects_balance = 1)
+  //   - amount IS NOT NULL and > 0
+  //   - Participates in balance calculation
+  //   - Requires reversal for deletion
+  //
+  // MODE B: Informational Entry (affects_balance = 0)
+  //   - amount IS NULL (stored as NULL, not 0)
+  //   - Does NOT affect balance
+  //   - Can be soft-deleted without reversal
+  //
+  // Architecture Contract v1.0: Validates invariants before insert
   addLedgerEntry(entry) {
-    const stmt = this.db.prepare(`
-      INSERT INTO ledger_entries (entity_type, entity_id, entry_type, amount, reference_type, description, entry_date, affects_balance)
-      VALUES (@entity_type, @entity_id, @entry_type, @amount, 'manual', @description, @entry_date, @affects_balance)
-    `);
-    const info = stmt.run({
-      entity_type: entry.entity_type,
-      entity_id: entry.entity_id,
-      entry_type: entry.entry_type, // 'CREDIT' or 'DEBIT'
-      amount: entry.amount || 0,
-      description: entry.description || null,
-      entry_date: entry.entry_date || null,  // NULL = use created_at in queries
-      affects_balance: entry.affects_balance !== undefined ? entry.affects_balance : 1
+    // Determine if this is a financial or informational entry
+    const isFinancial = entry.affects_balance !== 0;
+
+    // ==== APPLICATION-LEVEL VALIDATION (Architecture Contract Invariants) ====
+
+    // GUARD 1: Financial entries require a valid amount
+    if (isFinancial && (entry.amount === undefined || entry.amount === null)) {
+      throw new Error('LEDGER INVARIANT VIOLATION: financial entries (affects_balance=1) require an amount');
+    }
+
+    // GUARD 2: Financial entries must have amount > 0 (reject zero-amount)
+    if (isFinancial && entry.amount <= 0) {
+      throw new Error('LEDGER INVARIANT VIOLATION: amount must be > 0 for financial entries');
+    }
+
+    // GUARD 3: Informational entries MUST NOT have a non-null amount
+    // This prevents accidentally treating 0 as informational
+    if (!isFinancial && entry.amount !== undefined && entry.amount !== null && entry.amount !== 0) {
+      console.warn(`LEDGER WARNING: Informational entry has amount=${entry.amount}. Setting to NULL.`);
+    }
+
+    // GUARD 4: entry_type must be CREDIT or DEBIT
+    if (!['CREDIT', 'DEBIT'].includes(entry.entry_type)) {
+      throw new Error('LEDGER INVARIANT VIOLATION: entry_type must be CREDIT or DEBIT');
+    }
+
+    // WRITE-TIME ATOMICITY: Wrap insert + balance sync in transaction
+    const insertEntry = this.db.transaction(() => {
+      const stmt = this.db.prepare(`
+        INSERT INTO ledger_entries (
+          entity_type, entity_id, entry_type, amount, reference_type, 
+          description, entry_date, entry_time, affects_balance, is_void
+        )
+        VALUES (
+          @entity_type, @entity_id, @entry_type, @amount, 'manual', 
+          @description, @entry_date, @entry_time, @affects_balance, 0
+        )
+      `);
+
+      // For informational entries, store NULL for amount (not 0)
+      // This makes the financial/informational distinction unambiguous
+      const amountToStore = isFinancial ? entry.amount : null;
+
+      const info = stmt.run({
+        entity_type: entry.entity_type,
+        entity_id: entry.entity_id,
+        entry_type: entry.entry_type, // 'CREDIT' or 'DEBIT'
+        amount: amountToStore,
+        description: entry.description || null,
+        entry_date: entry.entry_date || null,
+        entry_time: entry.entry_time || null,
+        affects_balance: isFinancial ? 1 : 0
+      });
+
+      // Sync balance cache only for financial entries
+      if (isFinancial) {
+        this.syncBalanceCache(entry.entity_type, entry.entity_id);
+      }
+
+      // OPERATIONAL LOGGING: Audit trail for ledger insert
+      this.logOperationalEvent('LEDGER_INSERT', {
+        entry_id: info.lastInsertRowid,
+        entity_type: entry.entity_type,
+        entity_id: entry.entity_id,
+        entry_type: entry.entry_type,
+        affects_balance: isFinancial ? 1 : 0,
+        reference_type: 'manual'
+      });
+
+      return info.lastInsertRowid;
     });
-    return info.lastInsertRowid;
+
+    return insertEntry();
   }
 
   // TRANSITIONAL: Get ledger entries for an entity
@@ -1504,226 +1860,352 @@ class FishMarketDB {
 
   // Get unified account history for customer (fish transactions + manual entries)
   // DEFAULT VIEW: Only shows active (non-voided, non-reversed) entries
-  getCustomerAccountHistory(customerId) {
-    const stmt = this.db.prepare(`
+  // 
+  // READ-PATH OPTIMIZED: Paginated, deterministic ordering, no balance calculation
+  //
+  // @param {number} customerId - Customer ID
+  // @param {object} options - Pagination options
+  // @param {number} options.limit - Max records to return (default: 50, max: 200)
+  // @param {number} options.offset - Records to skip (default: 0)
+  // @returns {object} - { data: array, total: number, hasMore: boolean }
+  getCustomerAccountHistory(customerId, options = {}) {
+    const { limit = 50, offset = 0 } = options;
+    const safeLimit = Math.min(limit, 200); // Hard cap at 200
+
+    // PERFORMANCE GUARD: Check if account has excessive records
+    const countStmt = this.db.prepare(`
       SELECT 
-        'sale' as record_type,
-        id,
-        transaction_date as entry_date,
-        transaction_time as entry_time,
-        total_amount as amount,
-        paid_amount,
-        balance_change,
-        payment_status,
-        NULL as description,
-        NULL as entry_type,
-        created_at,
-        NULL as audit_status,
-        1 as affects_balance
-      FROM transactions
-      WHERE customer_id = ? AND (status IS NULL OR status = 'completed')
-
-      UNION ALL
-
-      SELECT 
-        'manual_' || LOWER(entry_type) as record_type,
-        id,
-        COALESCE(entry_date, DATE(created_at)) as entry_date,
-        TIME(created_at) as entry_time,
-        amount,
-        NULL as paid_amount,
-        CASE entry_type
-          WHEN 'CREDIT' THEN -amount
-          WHEN 'DEBIT' THEN amount
-        END as balance_change,
-        NULL as payment_status,
-        description,
-        entry_type,
-        created_at,
-        NULL as audit_status,
-        COALESCE(affects_balance, 1) as affects_balance
-      FROM ledger_entries
-      WHERE entity_type = 'customer' 
-        AND entity_id = ? 
-        AND reference_type = 'manual'
-        AND (is_reversed IS NULL OR is_reversed = 0)
-
-      ORDER BY entry_date DESC, entry_time DESC
+        (SELECT COUNT(*) FROM transactions WHERE customer_id = ? AND (status IS NULL OR status = 'completed')) +
+        (SELECT COUNT(*) FROM ledger_entries WHERE entity_type = 'customer' AND entity_id = ? AND reference_type = 'manual' AND (is_reversed IS NULL OR is_reversed = 0)) 
+      AS total
     `);
-    return stmt.all(customerId, customerId);
+    const total = countStmt.get(customerId, customerId).total;
+
+    if (total > 10000 && this.isDev) {
+      console.warn(`PERFORMANCE WARNING: Customer ${customerId} has ${total} records. Consider archiving.`);
+    }
+
+    const stmt = this.db.prepare(`
+      SELECT * FROM (
+        SELECT 
+          'sale' as record_type,
+          id,
+          transaction_date as entry_date,
+          transaction_time as entry_time,
+          total_amount as amount,
+          paid_amount,
+          balance_change,
+          payment_status,
+          NULL as description,
+          NULL as entry_type,
+          created_at,
+          NULL as audit_status,
+          1 as affects_balance
+        FROM transactions
+        WHERE customer_id = ? AND (status IS NULL OR status = 'completed')
+
+        UNION ALL
+
+        SELECT 
+          'manual_' || LOWER(entry_type) as record_type,
+          id,
+          COALESCE(entry_date, DATE(created_at)) as entry_date,
+          TIME(created_at) as entry_time,
+          amount,
+          NULL as paid_amount,
+          CASE entry_type
+            WHEN 'CREDIT' THEN -amount
+            WHEN 'DEBIT' THEN amount
+          END as balance_change,
+          NULL as payment_status,
+          description,
+          entry_type,
+          created_at,
+          NULL as audit_status,
+          COALESCE(affects_balance, 1) as affects_balance
+        FROM ledger_entries
+        WHERE entity_type = 'customer' 
+          AND entity_id = ? 
+          AND reference_type = 'manual'
+          AND (is_reversed IS NULL OR is_reversed = 0)
+      )
+      ORDER BY entry_date DESC, created_at DESC, id DESC
+      LIMIT ? OFFSET ?
+    `);
+
+    const data = stmt.all(customerId, customerId, safeLimit, offset);
+
+    return {
+      data,
+      total,
+      limit: safeLimit,
+      offset,
+      hasMore: offset + data.length < total
+    };
   }
 
   // AUDIT VIEW: Shows ALL entries including voided/reversed with status labels
-  getCustomerAccountAuditHistory(customerId) {
-    const stmt = this.db.prepare(`
+  // READ-PATH SAFE: Paginated to prevent unbounded queries
+  //
+  // @param {number} customerId - Customer ID
+  // @param {object} options - Pagination options (limit, offset)
+  // @returns {object} - { data: array, total: number, hasMore: boolean }
+  getCustomerAccountAuditHistory(customerId, options = {}) {
+    const { limit = 100, offset = 0 } = options;
+    const safeLimit = Math.min(limit, 500); // Hard cap at 500 for audit
+
+    // Get total count for pagination
+    const countStmt = this.db.prepare(`
       SELECT 
-        'sale' as record_type,
-        id,
-        transaction_date as entry_date,
-        transaction_time as entry_time,
-        total_amount as amount,
-        paid_amount,
-        balance_change,
-        payment_status,
-        NULL as description,
-        NULL as entry_type,
-        created_at,
-        CASE WHEN status = 'voided' THEN 'VOIDED' ELSE NULL END as audit_status
-      FROM transactions
-      WHERE customer_id = ?
-
-      UNION ALL
-
-      SELECT 
-        'manual_' || LOWER(entry_type) as record_type,
-        id,
-        COALESCE(entry_date, DATE(created_at)) as entry_date,
-        TIME(created_at) as entry_time,
-        amount,
-        NULL as paid_amount,
-        CASE entry_type
-          WHEN 'CREDIT' THEN -amount
-          WHEN 'DEBIT' THEN amount
-        END as balance_change,
-        NULL as payment_status,
-        description,
-        entry_type,
-        created_at,
-        CASE 
-          WHEN is_reversed = 1 THEN 'REVERSED'
-          WHEN reference_type = 'void' THEN 'REVERSAL_ENTRY'
-          ELSE NULL 
-        END as audit_status
-      FROM ledger_entries
-      WHERE entity_type = 'customer' 
-        AND entity_id = ? 
-        AND (reference_type = 'manual' OR reference_type = 'void')
-
-      ORDER BY entry_date DESC, entry_time DESC
+        (SELECT COUNT(*) FROM transactions WHERE customer_id = ?) +
+        (SELECT COUNT(*) FROM ledger_entries WHERE entity_type = 'customer' AND entity_id = ? AND (reference_type = 'manual' OR reference_type = 'void')) 
+      AS total
     `);
-    return stmt.all(customerId, customerId);
+    const total = countStmt.get(customerId, customerId).total;
+
+    const stmt = this.db.prepare(`
+      SELECT * FROM (
+        SELECT 
+          'sale' as record_type,
+          id,
+          transaction_date as entry_date,
+          transaction_time as entry_time,
+          total_amount as amount,
+          paid_amount,
+          balance_change,
+          payment_status,
+          NULL as description,
+          NULL as entry_type,
+          created_at,
+          CASE WHEN status = 'voided' THEN 'VOIDED' ELSE NULL END as audit_status
+        FROM transactions
+        WHERE customer_id = ?
+
+        UNION ALL
+
+        SELECT 
+          'manual_' || LOWER(entry_type) as record_type,
+          id,
+          COALESCE(entry_date, DATE(created_at)) as entry_date,
+          TIME(created_at) as entry_time,
+          amount,
+          NULL as paid_amount,
+          CASE entry_type
+            WHEN 'CREDIT' THEN -amount
+            WHEN 'DEBIT' THEN amount
+          END as balance_change,
+          NULL as payment_status,
+          description,
+          entry_type,
+          created_at,
+          CASE 
+            WHEN is_reversed = 1 THEN 'REVERSED'
+            WHEN reference_type = 'void' THEN 'REVERSAL_ENTRY'
+            ELSE NULL 
+          END as audit_status
+        FROM ledger_entries
+        WHERE entity_type = 'customer' 
+          AND entity_id = ? 
+          AND (reference_type = 'manual' OR reference_type = 'void')
+      )
+      ORDER BY entry_date DESC, entry_time DESC
+      LIMIT ? OFFSET ?
+    `);
+
+    const data = stmt.all(customerId, customerId, safeLimit, offset);
+
+    return {
+      data,
+      total,
+      limit: safeLimit,
+      offset,
+      hasMore: offset + data.length < total
+    };
   }
 
   // Get unified account history for farmer (fish transactions + manual entries)
   // DEFAULT VIEW: Only shows active (non-voided, non-reversed) entries
-  getFarmerAccountHistory(farmerId) {
-    const stmt = this.db.prepare(`
+  // 
+  // READ-PATH OPTIMIZED: Paginated, deterministic ordering, no balance calculation
+  //
+  // @param {number} farmerId - Farmer ID
+  // @param {object} options - Pagination options
+  // @param {number} options.limit - Max records to return (default: 50, max: 200)
+  // @param {number} options.offset - Records to skip (default: 0)
+  // @returns {object} - { data: array, total: number, hasMore: boolean }
+  getFarmerAccountHistory(farmerId, options = {}) {
+    const { limit = 50, offset = 0 } = options;
+    const safeLimit = Math.min(limit, 200); // Hard cap at 200
+
+    // PERFORMANCE GUARD: Check if account has excessive records
+    const countStmt = this.db.prepare(`
       SELECT 
-        'purchase' as record_type,
-        ft.id,
-        ft.transaction_date as entry_date,
-        ft.transaction_time as entry_time,
-        ft.total_amount as amount,
-        ft.paid_amount,
-        ft.balance_change,
-        NULL as payment_status,
-        NULL as description,
-        NULL as entry_type,
-        ft.created_at,
-        COALESCE(
-          (SELECT GROUP_CONCAT(fti.fish_name, ', ') 
-           FROM farmer_transaction_items fti 
-           WHERE fti.transaction_id = ft.id),
-          ft.fish_name,
-          'N/A'
-        ) as fish_name,
-        ft.commission_amount,
-        NULL as audit_status,
-        1 as affects_balance
-      FROM farmer_transactions ft
-      WHERE ft.farmer_id = ? AND (ft.status IS NULL OR ft.status = 'completed')
-
-      UNION ALL
-
-      SELECT 
-        'manual_' || LOWER(entry_type) as record_type,
-        id,
-        COALESCE(entry_date, DATE(created_at)) as entry_date,
-        TIME(created_at) as entry_time,
-        amount,
-        NULL as paid_amount,
-        CASE entry_type
-          WHEN 'DEBIT' THEN amount
-          WHEN 'CREDIT' THEN -amount
-        END as balance_change,
-        NULL as payment_status,
-        description,
-        entry_type,
-        created_at,
-        NULL as fish_name,
-        NULL as commission_amount,
-        NULL as audit_status,
-        COALESCE(affects_balance, 1) as affects_balance
-      FROM ledger_entries
-      WHERE entity_type = 'farmer' 
-        AND entity_id = ? 
-        AND reference_type = 'manual'
-        AND (is_reversed IS NULL OR is_reversed = 0)
-
-      ORDER BY entry_date DESC, entry_time DESC
+        (SELECT COUNT(*) FROM farmer_transactions WHERE farmer_id = ? AND (status IS NULL OR status = 'completed')) +
+        (SELECT COUNT(*) FROM ledger_entries WHERE entity_type = 'farmer' AND entity_id = ? AND reference_type = 'manual' AND (is_reversed IS NULL OR is_reversed = 0)) 
+      AS total
     `);
-    return stmt.all(farmerId, farmerId);
+    const total = countStmt.get(farmerId, farmerId).total;
+
+    if (total > 10000 && this.isDev) {
+      console.warn(`PERFORMANCE WARNING: Farmer ${farmerId} has ${total} records. Consider archiving.`);
+    }
+
+    const stmt = this.db.prepare(`
+      SELECT * FROM (
+        SELECT 
+          'purchase' as record_type,
+          ft.id,
+          ft.transaction_date as entry_date,
+          ft.transaction_time as entry_time,
+          ft.total_amount as amount,
+          ft.paid_amount,
+          ft.balance_change,
+          NULL as payment_status,
+          NULL as description,
+          NULL as entry_type,
+          ft.created_at,
+          COALESCE(
+            (SELECT GROUP_CONCAT(fti.fish_name, ', ') 
+             FROM farmer_transaction_items fti 
+             WHERE fti.transaction_id = ft.id),
+            ft.fish_name,
+            'N/A'
+          ) as fish_name,
+          ft.commission_amount,
+          NULL as audit_status,
+          1 as affects_balance
+        FROM farmer_transactions ft
+        WHERE ft.farmer_id = ? AND (ft.status IS NULL OR ft.status = 'completed')
+
+        UNION ALL
+
+        SELECT 
+          'manual_' || LOWER(entry_type) as record_type,
+          id,
+          COALESCE(entry_date, DATE(created_at)) as entry_date,
+          TIME(created_at) as entry_time,
+          amount,
+          NULL as paid_amount,
+          CASE entry_type
+            WHEN 'DEBIT' THEN amount
+            WHEN 'CREDIT' THEN -amount
+          END as balance_change,
+          NULL as payment_status,
+          description,
+          entry_type,
+          created_at,
+          NULL as fish_name,
+          NULL as commission_amount,
+          NULL as audit_status,
+          COALESCE(affects_balance, 1) as affects_balance
+        FROM ledger_entries
+        WHERE entity_type = 'farmer' 
+          AND entity_id = ? 
+          AND reference_type = 'manual'
+          AND (is_reversed IS NULL OR is_reversed = 0)
+      )
+      ORDER BY entry_date DESC, created_at DESC, id DESC
+      LIMIT ? OFFSET ?
+    `);
+
+    const data = stmt.all(farmerId, farmerId, safeLimit, offset);
+
+    return {
+      data,
+      total,
+      limit: safeLimit,
+      offset,
+      hasMore: offset + data.length < total
+    };
   }
 
   // AUDIT VIEW: Shows ALL entries including voided/reversed with status labels
-  getFarmerAccountAuditHistory(farmerId) {
-    const stmt = this.db.prepare(`
+  // READ-PATH SAFE: Paginated to prevent unbounded queries
+  //
+  // @param {number} farmerId - Farmer ID
+  // @param {object} options - Pagination options (limit, offset)
+  // @returns {object} - { data: array, total: number, hasMore: boolean }
+  getFarmerAccountAuditHistory(farmerId, options = {}) {
+    const { limit = 100, offset = 0 } = options;
+    const safeLimit = Math.min(limit, 500); // Hard cap at 500 for audit
+
+    // Get total count for pagination
+    const countStmt = this.db.prepare(`
       SELECT 
-        'purchase' as record_type,
-        ft.id,
-        ft.transaction_date as entry_date,
-        ft.transaction_time as entry_time,
-        ft.total_amount as amount,
-        ft.paid_amount,
-        ft.balance_change,
-        NULL as payment_status,
-        NULL as description,
-        NULL as entry_type,
-        ft.created_at,
-        COALESCE(
-          (SELECT GROUP_CONCAT(fti.fish_name, ', ') 
-           FROM farmer_transaction_items fti 
-           WHERE fti.transaction_id = ft.id),
-          ft.fish_name,
-          'N/A'
-        ) as fish_name,
-        ft.commission_amount,
-        CASE WHEN ft.status = 'voided' THEN 'VOIDED' ELSE NULL END as audit_status
-      FROM farmer_transactions ft
-      WHERE ft.farmer_id = ?
-
-      UNION ALL
-
-      SELECT 
-        'manual_' || LOWER(entry_type) as record_type,
-        id,
-        COALESCE(entry_date, DATE(created_at)) as entry_date,
-        TIME(created_at) as entry_time,
-        amount,
-        NULL as paid_amount,
-        CASE entry_type
-          WHEN 'DEBIT' THEN amount
-          WHEN 'CREDIT' THEN -amount
-        END as balance_change,
-        NULL as payment_status,
-        description,
-        entry_type,
-        created_at,
-        NULL as fish_name,
-        NULL as commission_amount,
-        CASE 
-          WHEN is_reversed = 1 THEN 'REVERSED'
-          WHEN reference_type = 'void' THEN 'REVERSAL_ENTRY'
-          ELSE NULL 
-        END as audit_status
-      FROM ledger_entries
-      WHERE entity_type = 'farmer' 
-        AND entity_id = ? 
-        AND (reference_type = 'manual' OR reference_type = 'void')
-
-      ORDER BY entry_date DESC, entry_time DESC
+        (SELECT COUNT(*) FROM farmer_transactions WHERE farmer_id = ?) +
+        (SELECT COUNT(*) FROM ledger_entries WHERE entity_type = 'farmer' AND entity_id = ? AND (reference_type = 'manual' OR reference_type = 'void')) 
+      AS total
     `);
-    return stmt.all(farmerId, farmerId);
+    const total = countStmt.get(farmerId, farmerId).total;
+
+    const stmt = this.db.prepare(`
+      SELECT * FROM (
+        SELECT 
+          'purchase' as record_type,
+          ft.id,
+          ft.transaction_date as entry_date,
+          ft.transaction_time as entry_time,
+          ft.total_amount as amount,
+          ft.paid_amount,
+          ft.balance_change,
+          NULL as payment_status,
+          NULL as description,
+          NULL as entry_type,
+          ft.created_at,
+          COALESCE(
+            (SELECT GROUP_CONCAT(fti.fish_name, ', ') 
+             FROM farmer_transaction_items fti 
+             WHERE fti.transaction_id = ft.id),
+            ft.fish_name,
+            'N/A'
+          ) as fish_name,
+          ft.commission_amount,
+          CASE WHEN ft.status = 'voided' THEN 'VOIDED' ELSE NULL END as audit_status
+        FROM farmer_transactions ft
+        WHERE ft.farmer_id = ?
+
+        UNION ALL
+
+        SELECT 
+          'manual_' || LOWER(entry_type) as record_type,
+          id,
+          COALESCE(entry_date, DATE(created_at)) as entry_date,
+          TIME(created_at) as entry_time,
+          amount,
+          NULL as paid_amount,
+          CASE entry_type
+            WHEN 'DEBIT' THEN amount
+            WHEN 'CREDIT' THEN -amount
+          END as balance_change,
+          NULL as payment_status,
+          description,
+          entry_type,
+          created_at,
+          NULL as fish_name,
+          NULL as commission_amount,
+          CASE 
+            WHEN is_reversed = 1 THEN 'REVERSED'
+            WHEN reference_type = 'void' THEN 'REVERSAL_ENTRY'
+            ELSE NULL 
+          END as audit_status
+        FROM ledger_entries
+        WHERE entity_type = 'farmer' 
+          AND entity_id = ? 
+          AND (reference_type = 'manual' OR reference_type = 'void')
+      )
+      ORDER BY entry_date DESC, entry_time DESC
+      LIMIT ? OFFSET ?
+    `);
+
+    const data = stmt.all(farmerId, farmerId, safeLimit, offset);
+
+    return {
+      data,
+      total,
+      limit: safeLimit,
+      offset,
+      hasMore: offset + data.length < total
+    };
   }
 
   // Calculate customer balance from legacy transactions + manual ledger entries
@@ -1731,99 +2213,17 @@ class FishMarketDB {
   // - Original entries are INCLUDED in balance (never excluded)
   // - Reversal entries naturally cancel original entries
   // - affects_balance flag controls whether entry participates in balance math
+  // DEPRECATED: This function now delegates to computeAccountBalance()
   getCustomerBalanceFromLedger(customerId) {
-    // Get initial balance from customers table
-    const initialStmt = this.db.prepare(`
-      SELECT COALESCE(initial_balance, 0) as initial_balance FROM customers WHERE id = ?
-    `);
-    const initial = initialStmt.get(customerId)?.initial_balance || 0;
-
-    // Get sum of all transaction balance changes (legacy transactions)
-    // Include ALL transactions - voided ones are canceled by reversal ledger entries
-    const txnStmt = this.db.prepare(`
-      SELECT COALESCE(SUM(balance_change), 0) as txn_balance
-      FROM transactions
-      WHERE customer_id = ?
-    `);
-    const txnBalance = txnStmt.get(customerId)?.txn_balance || 0;
-
-    // Get all ledger entries with affects_balance = 1 (or NULL for backward compat)
-    // Include ALL entry types (manual + void) - reversal entries naturally cancel originals
-    // NO exclusion of is_reversed entries - let reversals do the work
-    const creditStmt = this.db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) as credits
-      FROM ledger_entries 
-      WHERE entity_type = 'customer' 
-        AND entity_id = ? 
-        AND entry_type = 'CREDIT' 
-        AND (reference_type = 'manual' OR reference_type = 'void')
-        AND (affects_balance IS NULL OR affects_balance = 1)
-    `);
-    const debitStmt = this.db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) as debits
-      FROM ledger_entries 
-      WHERE entity_type = 'customer' 
-        AND entity_id = ? 
-        AND entry_type = 'DEBIT' 
-        AND (reference_type = 'manual' OR reference_type = 'void')
-        AND (affects_balance IS NULL OR affects_balance = 1)
-    `);
-
-    const credits = creditStmt.get(customerId)?.credits || 0;
-    const debits = debitStmt.get(customerId)?.debits || 0;
-
-    // Legacy balance + ledger adjustments
-    // Credits = increase outstanding (subtract from balance)
-    // Debits = payment received (add to balance)
-    return initial + txnBalance + debits - credits;
+    // Architecture Contract v1.0: Use centralized balance computation
+    return this.computeAccountBalance('customer', customerId);
   }
 
-  // Calculate farmer balance from legacy transactions + manual ledger entries
-  // ACCOUNTING INVARIANT: Each entry affects balance through exactly ONE mechanism
+  // Calculate farmer balance - delegates to centralized computation
+  // DEPRECATED: This function now delegates to computeAccountBalance()
   getFarmerBalanceFromLedger(farmerId) {
-    // Get initial balance from farmers table
-    const initialStmt = this.db.prepare(`
-      SELECT COALESCE(initial_balance, 0) as initial_balance FROM farmers WHERE id = ?
-    `);
-    const initial = initialStmt.get(farmerId)?.initial_balance || 0;
-
-    // Get sum of all transaction balance changes (legacy transactions)
-    // Include ALL transactions - voided ones are canceled by reversal ledger entries
-    const txnStmt = this.db.prepare(`
-      SELECT COALESCE(SUM(balance_change), 0) as txn_balance
-      FROM farmer_transactions
-      WHERE farmer_id = ?
-    `);
-    const txnBalance = txnStmt.get(farmerId)?.txn_balance || 0;
-
-    // Get all ledger entries with affects_balance = 1 (or NULL for backward compat)
-    // NO exclusion of is_reversed entries - let reversals do the work
-    const debitStmt = this.db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) as debits
-      FROM ledger_entries 
-      WHERE entity_type = 'farmer' 
-        AND entity_id = ? 
-        AND entry_type = 'DEBIT' 
-        AND (reference_type = 'manual' OR reference_type = 'void')
-        AND (affects_balance IS NULL OR affects_balance = 1)
-    `);
-    const creditStmt = this.db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) as credits
-      FROM ledger_entries 
-      WHERE entity_type = 'farmer' 
-        AND entity_id = ? 
-        AND entry_type = 'CREDIT' 
-        AND (reference_type = 'manual' OR reference_type = 'void')
-        AND (affects_balance IS NULL OR affects_balance = 1)
-    `);
-
-    const debits = debitStmt.get(farmerId)?.debits || 0;
-    const credits = creditStmt.get(farmerId)?.credits || 0;
-
-    // Legacy balance + ledger adjustments
-    // Debits = we owe more (add to positive balance)
-    // Credits = payment made (subtract from balance)
-    return initial + txnBalance + debits - credits;
+    // Architecture Contract v1.0: Use centralized balance computation
+    return this.computeAccountBalance('farmer', farmerId);
   }
 
   // Void a customer fish transaction (accounting-safe deletion)
@@ -1868,6 +2268,9 @@ class FishMarketDB {
         transactionId,
         `Voided transaction #${transactionId}`
       );
+
+      // WRITE-TIME ATOMICITY: Sync balance cache inside the same transaction
+      this.syncBalanceCache('customer', txn.customer_id);
     });
 
     voidTxn();
@@ -1914,6 +2317,9 @@ class FishMarketDB {
         transactionId,
         `Voided farmer transaction #${transactionId}`
       );
+
+      // WRITE-TIME ATOMICITY: Sync balance cache inside the same transaction
+      this.syncBalanceCache('farmer', txn.farmer_id);
     });
 
     voidTxn();
