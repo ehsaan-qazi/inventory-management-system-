@@ -484,8 +484,9 @@
           : auditStatus === 'REVERSED' ? '↩️ REVERSED'
             : '📋 REVERSAL';
         const recordLabel = record.record_type === 'sale' ? 'Sale'
-          : record.record_type.startsWith('manual_') ? (record.record_type === 'manual_credit' ? 'Manual Credit' : 'Manual Debit')
-            : 'Purchase';
+          : record.record_type === 'manual_note' ? 'Note'
+          : record.record_type === 'manual_credit' ? 'Manual Credit' 
+          : 'Manual Debit';
 
         return `
         <tr class="audit-row" style="opacity: 0.6; background: #f5f5f5;">
@@ -501,15 +502,38 @@
       `;
       }
 
+      // Handle NOTE entries (non-financial informational records)
+      if (record.record_type === 'manual_note') {
+        // NOTE entry - informational only, no balance impact
+        // Use display_amount if present, otherwise show dash
+        const displayAmt = record.display_amount;
+        const amountDisplay = (displayAmt !== null && displayAmt !== undefined && displayAmt > 0) 
+          ? `Rs.${displayAmt.toLocaleString()}` 
+          : '-';
+        
+        return `
+        <tr class="transaction-row-clickable" onclick="viewManualEntryReceipt(${record.id}, '${customer.name.replace(/'/g, "\\'")}', ${customer.balance})">
+          <td>${date.toLocaleDateString('en-IN')}</td>
+          <td><span class="status-badge active" style="background: #e7e7ff; color: #5a5aff;">Note</span></td>
+          <td>${amountDisplay}</td>
+          <td>${record.description || '-'}</td>
+          <td><span style="color: #666; font-size: 11px;">No balance impact</span></td>
+          <td class="action-buttons">
+            <button class="action-btn delete" onclick="event.stopPropagation(); reverseManualEntry(${record.id})" title="Delete Entry">
+              <img src="../assets/delete.png" alt="Delete" style="width: 16px; height: 16px;">
+            </button>
+          </td>
+        </tr>
+      `;
+      }
+
       // Normal mode - show active entries with action buttons
       if (record.record_type === 'manual_credit' || record.record_type === 'manual_debit') {
-        // Manual entry row with delete button
-        // Check if it's a NOTE (non-financial) entry
-        const isNote = record.affects_balance === 0;
-        const typeLabel = isNote ? 'Note' : (record.record_type === 'manual_credit' ? 'Manual Credit' : 'Manual Debit');
-        const typeClass = isNote ? 'active' : (record.record_type === 'manual_credit' ? 'partial' : 'paid');
-        // Handle NULL amounts for non-financial entries
-        const amountDisplay = (record.amount === null || record.amount === undefined || (isNote && record.amount === 0)) ? '-' : `Rs.${record.amount.toFixed(2)}`;
+        // Financial manual entry row with delete button
+        const typeLabel = record.record_type === 'manual_credit' ? 'Manual Credit' : 'Manual Debit';
+        const typeClass = record.record_type === 'manual_credit' ? 'partial' : 'paid';
+        const amountDisplay = `Rs.${record.amount.toFixed(2)}`;
+        
         return `
         <tr class="transaction-row-clickable" onclick="viewManualEntryReceipt(${record.id}, '${customer.name.replace(/'/g, "\\'")}', ${customer.balance})">
           <td>${date.toLocaleDateString('en-IN')}</td>
@@ -878,29 +902,76 @@
 
       const entryDate = new Date(entry.entry_date || entry.created_at);
       const receiptContent = document.getElementById('receiptContent');
-      const typeLabel = entry.entry_type === 'CREDIT' ? 'Credit' : 'Debit';
-      const bgColor = entry.entry_type === 'CREDIT' ? '#fff3cd' : '#d4edda';
+      
+      // Determine if this is a NOTE (non-financial) entry
+      const isNote = entry.affects_balance === 0;
+      
+      // Semantic mapping: NOTE → "Note", CREDIT → "Credit", DEBIT → "Debit"
+      let typeLabel, bgColor, borderColor, textColor;
+      if (isNote) {
+        typeLabel = 'Note';
+        bgColor = '#e7e7ff';
+        borderColor = '#5a5aff';
+        textColor = '#3a3aaa';
+      } else if (entry.entry_type === 'CREDIT') {
+        typeLabel = 'Credit';
+        bgColor = '#fff3cd';
+        borderColor = '#ffc107';
+        textColor = '#856404';
+      } else {
+        typeLabel = 'Debit';
+        bgColor = '#d4edda';
+        borderColor = '#28a745';
+        textColor = '#155724';
+      }
+
+      // For NOTE entries, use display_amount if present; for financial entries, use amount
+      const displayAmount = isNote 
+        ? (entry.display_amount !== null && entry.display_amount !== undefined && entry.display_amount > 0 
+            ? entry.display_amount 
+            : null)
+        : entry.amount;
+
+      // Build amount section HTML
+      const amountSection = displayAmount !== null
+        ? `<p style="font-size: 28px; margin: 15px 0; font-weight: bold; color: ${textColor};">
+             Rs.${displayAmount.toLocaleString()}
+           </p>`
+        : `<p style="font-size: 18px; margin: 15px 0; color: #666; font-style: italic;">
+             No amount specified
+           </p>`;
+
+      // Build balance impact section (only for financial entries)
+      const balanceSection = isNote
+        ? `<div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+             <p style="margin: 0; font-size: 14px; color: #666;">
+               <em>This is an informational note and does not affect the account balance.</em>
+             </p>
+           </div>`
+        : `<div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+             <p style="margin: 0; font-size: 16px;"><strong>Resulting Balance:</strong> Rs.${Math.abs(entityBalance).toLocaleString()}
+               ${entityBalance < 0 ? ' (Outstanding)' : entityBalance > 0 ? ' (Prepaid)' : ' (Balanced)'}
+             </p>
+           </div>`;
 
       receiptContent.innerHTML = `
         <div style="font-family: monospace; padding: 20px; background: white;">
           <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px;">
             <h2 style="margin: 0;">FishMarket</h2>
-            <p style="margin: 5px 0;">Manual Entry Receipt</p>
+            <p style="margin: 5px 0;">${isNote ? 'Account Note' : 'Manual Entry Receipt'}</p>
           </div>
           
           <div style="margin-bottom: 20px;">
-            <p><strong>Receipt #:</strong> ME-${entry.id}</p>
+            <p><strong>Receipt #:</strong> ${isNote ? 'NOTE' : 'ME'}-${entry.id}</p>
             <p><strong>Date:</strong> ${entryDate.toLocaleDateString('en-IN')}</p>
             <p><strong>Customer:</strong> ${entityName}</p>
           </div>
 
-          <div style="background: ${bgColor}; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid ${entry.entry_type === 'CREDIT' ? '#ffc107' : '#28a745'};">
+          <div style="background: ${bgColor}; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid ${borderColor};">
             <p style="font-size: 18px; margin: 0;">
-              <strong>Type:</strong> Manual ${typeLabel}
+              <strong>Type:</strong> ${isNote ? 'Informational Note' : 'Manual ' + typeLabel}
             </p>
-            <p style="font-size: 28px; margin: 15px 0; font-weight: bold; color: ${entry.entry_type === 'CREDIT' ? '#856404' : '#155724'};">
-              Rs.${entry.amount.toLocaleString()}
-            </p>
+            ${amountSection}
           </div>
 
           <div style="margin-bottom: 20px;">
@@ -908,11 +979,7 @@
             <p style="padding: 15px; background: #f5f5f5; border-radius: 8px; margin: 5px 0;">${entry.description || 'No description provided'}</p>
           </div>
 
-          <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-            <p style="margin: 0; font-size: 16px;"><strong>Resulting Balance:</strong> Rs.${Math.abs(entityBalance).toLocaleString()}
-              ${entityBalance < 0 ? ' (Outstanding)' : entityBalance > 0 ? ' (Prepaid)' : ' (Balanced)'}
-            </p>
-          </div>
+          ${balanceSection}
 
           <div style="margin-top: 30px; text-align: center; border-top: 2px solid #000; padding-top: 10px;">
             <p style="margin: 0;">Thank you for your business!</p>

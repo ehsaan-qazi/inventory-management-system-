@@ -1913,6 +1913,7 @@ class FishMarketDB {
           transaction_date as entry_date,
           transaction_time as entry_time,
           total_amount as amount,
+          NULL as display_amount,
           paid_amount,
           balance_change,
           payment_status,
@@ -1927,15 +1928,20 @@ class FishMarketDB {
         UNION ALL
 
         SELECT 
-          'manual_' || LOWER(entry_type) as record_type,
+          CASE 
+            WHEN affects_balance = 0 THEN 'manual_note'
+            ELSE 'manual_' || LOWER(entry_type) 
+          END as record_type,
           id,
           COALESCE(entry_date, DATE(created_at)) as entry_date,
           TIME(created_at) as entry_time,
           amount,
+          display_amount,
           NULL as paid_amount,
-          CASE entry_type
-            WHEN 'CREDIT' THEN -amount
-            WHEN 'DEBIT' THEN amount
+          CASE 
+            WHEN affects_balance = 0 THEN NULL
+            WHEN entry_type = 'CREDIT' THEN -amount
+            WHEN entry_type = 'DEBIT' THEN amount
           END as balance_change,
           NULL as payment_status,
           description,
@@ -2078,6 +2084,7 @@ class FishMarketDB {
           ft.transaction_date as entry_date,
           ft.transaction_time as entry_time,
           ft.total_amount as amount,
+          NULL as display_amount,
           ft.paid_amount,
           ft.balance_change,
           NULL as payment_status,
@@ -2100,15 +2107,20 @@ class FishMarketDB {
         UNION ALL
 
         SELECT 
-          'manual_' || LOWER(entry_type) as record_type,
+          CASE 
+            WHEN affects_balance = 0 THEN 'manual_note'
+            ELSE 'manual_' || LOWER(entry_type) 
+          END as record_type,
           id,
           COALESCE(entry_date, DATE(created_at)) as entry_date,
           TIME(created_at) as entry_time,
           amount,
+          display_amount,
           NULL as paid_amount,
-          CASE entry_type
-            WHEN 'DEBIT' THEN amount
-            WHEN 'CREDIT' THEN -amount
+          CASE 
+            WHEN affects_balance = 0 THEN NULL
+            WHEN entry_type = 'DEBIT' THEN amount
+            WHEN entry_type = 'CREDIT' THEN -amount
           END as balance_change,
           NULL as payment_status,
           description,
