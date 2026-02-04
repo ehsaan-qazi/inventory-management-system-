@@ -86,8 +86,9 @@ function setButtonLoading(button, loading) {
   }
 }
 
-// Track the last focused input element
-let lastFocusedInput = null;
+// Track the last focused input element - use WeakRef to avoid memory leaks
+let lastFocusedInputId = null; // Store ID instead of element reference
+let lastFocusedInputSelector = null; // Fallback selector
 
 // Track observers and intervals for cleanup
 let focusObserver = null;
@@ -97,7 +98,8 @@ let healthCheckInterval = null;
 
 // Reset focus state - call this on page load to clear stale references
 function resetFocusState() {
-  lastFocusedInput = null;
+  lastFocusedInputId = null;
+  lastFocusedInputSelector = null;
 
   // Clean up existing observers
   if (focusObserver) {
@@ -120,14 +122,26 @@ function resetFocusState() {
   }
 }
 
+// Get a reliable selector for an input element
+function getInputSelector(input) {
+  if (input.id) return `#${input.id}`;
+  if (input.name) return `[name="${input.name}"]`;
+  // Fallback to tag + class combination
+  const classes = Array.from(input.classList).join('.');
+  return classes ? `${input.tagName.toLowerCase()}.${classes}` : null;
+}
+
 // Track all input/textarea/select elements and their focus
 function setupFocusTracking() {
-  const inputs = document.querySelectorAll('input, textarea, select');
-  inputs.forEach(input => {
+  const trackInput = (input) => {
     input.addEventListener('focus', () => {
-      lastFocusedInput = input;
+      lastFocusedInputId = input.id || null;
+      lastFocusedInputSelector = getInputSelector(input);
     });
-  });
+  };
+
+  const inputs = document.querySelectorAll('input, textarea, select');
+  inputs.forEach(trackInput);
 
   // Use MutationObserver to track dynamically added inputs
   focusObserver = new MutationObserver((mutations) => {
@@ -135,18 +149,12 @@ function setupFocusTracking() {
       mutation.addedNodes.forEach((node) => {
         if (node.nodeType === 1) { // Element node
           if (node.matches && node.matches('input, textarea, select')) {
-            node.addEventListener('focus', () => {
-              lastFocusedInput = node;
-            });
+            trackInput(node);
           }
           // Also check children
-          const inputs = node.querySelectorAll && node.querySelectorAll('input, textarea, select');
-          if (inputs) {
-            inputs.forEach(input => {
-              input.addEventListener('focus', () => {
-                lastFocusedInput = input;
-              });
-            });
+          const childInputs = node.querySelectorAll && node.querySelectorAll('input, textarea, select');
+          if (childInputs) {
+            childInputs.forEach(trackInput);
           }
         }
       });
@@ -157,6 +165,25 @@ function setupFocusTracking() {
     childList: true,
     subtree: true
   });
+}
+
+// Find the last focused input by stored reference
+function findLastFocusedInput() {
+  // Try by ID first (most reliable)
+  if (lastFocusedInputId) {
+    const byId = document.getElementById(lastFocusedInputId);
+    if (byId && !byId.disabled) return byId;
+  }
+  // Try by selector
+  if (lastFocusedInputSelector) {
+    try {
+      const bySelector = document.querySelector(lastFocusedInputSelector);
+      if (bySelector && !bySelector.disabled) return bySelector;
+    } catch (e) {
+      // Invalid selector, ignore
+    }
+  }
+  return null;
 }
 
 // Handle window focus restoration
@@ -174,27 +201,44 @@ function handleWindowFocusRestored() {
     }
   });
 
-  // If there was a focused input before, try to restore focus
-  if (lastFocusedInput && document.body.contains(lastFocusedInput)) {
-    // Use setTimeout to ensure the focus happens after any other event processing
-    setTimeout(() => {
+  // Try to restore focus to last focused input
+  const lastInput = findLastFocusedInput();
+  if (lastInput) {
+    // Use requestAnimationFrame to ensure DOM is ready
+    requestAnimationFrame(() => {
       try {
-        lastFocusedInput.focus();
+        lastInput.focus();
       } catch (e) {
         // Ignore focus errors
       }
-    }, 10);
+    });
+  } else {
+    // No last input found - focus first available input on page
+    const firstInput = document.querySelector(
+      'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled])'
+    );
+    if (firstInput && !firstInput.closest('.modal:not(.active)')) {
+      requestAnimationFrame(() => {
+        try {
+          firstInput.focus();
+        } catch (e) {
+          // Ignore focus errors
+        }
+      });
+    }
   }
 }
 
 // Handle window focus lost
 function handleWindowFocusLost() {
-  // Store the currently focused element
-  if (document.activeElement &&
-    (document.activeElement.tagName === 'INPUT' ||
-      document.activeElement.tagName === 'TEXTAREA' ||
-      document.activeElement.tagName === 'SELECT')) {
-    lastFocusedInput = document.activeElement;
+  // Store the currently focused element by reference
+  const activeEl = document.activeElement;
+  if (activeEl &&
+    (activeEl.tagName === 'INPUT' ||
+      activeEl.tagName === 'TEXTAREA' ||
+      activeEl.tagName === 'SELECT')) {
+    lastFocusedInputId = activeEl.id || null;
+    lastFocusedInputSelector = getInputSelector(activeEl);
   }
 }
 
@@ -208,26 +252,28 @@ function setupModalFocusManagement() {
         if (modal.classList.contains('modal')) {
           if (modal.classList.contains('active')) {
             // Modal opened - focus first input inside modal
-            setTimeout(() => {
+            requestAnimationFrame(() => {
               const firstInput = modal.querySelector('input:not([type="hidden"]), textarea, select');
               if (firstInput) {
                 firstInput.focus();
               }
-            }, 100);
+            });
           } else {
             // Modal closed - restore focus to last focused input or first visible input
-            setTimeout(() => {
-              if (lastFocusedInput && document.body.contains(lastFocusedInput) &&
-                !lastFocusedInput.closest('.modal')) {
-                lastFocusedInput.focus();
+            requestAnimationFrame(() => {
+              const lastInput = findLastFocusedInput();
+              if (lastInput && !lastInput.closest('.modal')) {
+                lastInput.focus();
               } else {
                 // Find first visible input on page
-                const visibleInput = document.querySelector('input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled])');
+                const visibleInput = document.querySelector(
+                  'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled])'
+                );
                 if (visibleInput && !visibleInput.closest('.modal')) {
                   visibleInput.focus();
                 }
               }
-            }, 100);
+            });
           }
         }
       }
@@ -267,8 +313,8 @@ function setupModalFocusManagement() {
 function startInputHealthCheck() {
   // Check every 2 seconds
   healthCheckInterval = setInterval(() => {
-    // Only run if window is focused
-    if (!document.hidden) {
+    // Only run if window is focused and document is visible
+    if (!document.hidden && document.hasFocus()) {
       const allInputs = document.querySelectorAll('input:not([type="hidden"]), textarea, select');
       allInputs.forEach(input => {
         // If input appears to be stuck (no pointer events or wrong state), fix it
@@ -289,27 +335,41 @@ function startInputHealthCheck() {
   }, 2000);
 }
 
+// Cleanup function for page unload
+function cleanupFocusManagement() {
+  resetFocusState();
+  clearAllTimeouts();
+  
+  // Remove IPC listeners if available
+  if (window.electronAPI && window.electronAPI.removeWindowFocusListeners) {
+    window.electronAPI.removeWindowFocusListeners();
+  }
+}
+
 // Set up focus management when the page loads
 if (typeof window !== 'undefined') {
-  // Reset focus state and set up tracking on page load
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      resetFocusState(); // Clear stale references from previous page
-      setupFocusTracking();
-      setupModalFocusManagement();
-      startInputHealthCheck();
-    });
-  } else {
+  // Initialize on page load
+  const initFocusManagement = () => {
     resetFocusState(); // Clear stale references from previous page
     setupFocusTracking();
     setupModalFocusManagement();
     startInputHealthCheck();
-  }
+    
+    // Listen for focus restoration events from Electron
+    if (window.electronAPI) {
+      if (window.electronAPI.onWindowFocusRestored) {
+        window.electronAPI.onWindowFocusRestored(handleWindowFocusRestored);
+      }
+      if (window.electronAPI.onWindowFocusLost) {
+        window.electronAPI.onWindowFocusLost(handleWindowFocusLost);
+      }
+    }
+  };
 
-  // Listen for focus restoration events from Electron
-  if (window.electronAPI && window.electronAPI.onWindowFocusRestored) {
-    window.electronAPI.onWindowFocusRestored(handleWindowFocusRestored);
-    window.electronAPI.onWindowFocusLost(handleWindowFocusLost);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFocusManagement);
+  } else {
+    initFocusManagement();
   }
 
   // Also add a global click handler to ensure clicks on inputs always work
@@ -320,22 +380,15 @@ if (typeof window !== 'undefined') {
       if (!target.disabled) {
         target.style.pointerEvents = 'auto';
         target.style.userSelect = 'text';
-        // Try to focus it
-        setTimeout(() => {
-          try {
-            target.focus();
-          } catch (err) {
-            // Ignore
-          }
-        }, 0);
       }
     }
   }, true); // Use capture phase
 
-  // Clean up on page unload
-  window.addEventListener('beforeunload', () => {
-    clearAllTimeouts();
-  });
+  // Clean up on page unload to prevent listener accumulation
+  window.addEventListener('beforeunload', cleanupFocusManagement);
+  
+  // Also clean up on pagehide (more reliable on some browsers)
+  window.addEventListener('pagehide', cleanupFocusManagement);
 }
 
 // Export for Node.js (main process)

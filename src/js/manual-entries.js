@@ -17,13 +17,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupEntitySearch();
     initializeDateField();
 
-    // Ensure focus works on page load - focus first interactive input
-    setTimeout(() => {
+    // Ensure focus works on page load - use requestAnimationFrame for reliable timing
+    // This runs after the current frame completes, ensuring DOM is fully ready
+    requestAnimationFrame(() => {
         const entitySearch = document.getElementById('entitySearch');
-        if (entitySearch) {
+        if (entitySearch && document.hasFocus()) {
             entitySearch.focus();
         }
-    }, 100);
+    });
 });
 
 // Initialize date field to today's date
@@ -307,7 +308,12 @@ function renderRecentEntries(entries) {
         const isNote = entry.affects_balance === 0;
         const typeLabel = isNote ? 'NOTE' : entry.entry_type;
         const typeClass = isNote ? 'active' : (entry.entry_type === 'CREDIT' ? 'partial' : 'paid');
-        const amountDisplay = isNote && entry.amount === 0 ? '-' : `Rs.${entry.amount.toLocaleString()}`;
+
+        // For non-financial entries, use display_amount if available; for financial, use amount
+        const displayValue = isNote
+            ? (entry.display_amount ? entry.display_amount : null)
+            : entry.amount;
+        const amountDisplay = displayValue ? `Rs.${displayValue.toLocaleString()}` : '-';
 
         return `
       <tr${isNote ? ' style="opacity: 0.8;"' : ''}>

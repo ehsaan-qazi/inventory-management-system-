@@ -67,14 +67,23 @@ Every balance-affecting write MUST:
 
 ## Entry Type Rules
 
-| Type | `affects_balance` | `amount` | Balance Effect |
-|------|-------------------|----------|----------------|
-| Financial | 1 | > 0 | Yes |
-| Informational | 0 | NULL | No |
+| Type | `affects_balance` | `amount` | `display_amount` | Balance Effect |
+|------|-------------------|----------|------------------|----------------|
+| Financial | 1 | > 0 | NULL | Yes |
+| Informational | 0 | 0 | Optional (user's amount for UI/receipts) | No |
+
+### Dual-Amount Model (v1.2)
+- **`amount`** (NOT NULL): The accounting amount used for balance calculations
+  - Financial entries: User's actual amount (must be > 0)
+  - Non-financial entries: Always 0 (never affects balance)
+- **`display_amount`** (NULLABLE): Optional amount for UI/receipt display only
+  - Financial entries: NULL (no separate display needed)
+  - Non-financial entries: User's optional amount (if provided)
 
 ### Invariants
 - Financial entry with `amount <= 0`: **REJECTED**
-- Informational entry with `amount != NULL`: **WARNING, set to NULL**
+- Financial entry with `affects_balance = 0`: **REJECTED** (contradictory)
+- Non-financial entry with `amount != 0`: **IMPOSSIBLE** (enforced at write time)
 - Reversal referencing non-existent entry: **REJECTED**
 - Double reversal of same entry: **REJECTED**
 

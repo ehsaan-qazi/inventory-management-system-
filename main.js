@@ -81,15 +81,9 @@ app.whenReady().then(() => {
 
   createWindow();
 
-  // Global focus handler - registered ONCE outside createWindow to prevent accumulation
-  app.on('browser-window-focus', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('window-focus-restored');
-      if (!mainWindow.webContents.isFocused()) {
-        mainWindow.webContents.focus();
-      }
-    }
-  });
+  // NOTE: Focus handling is done in createWindow() via mainWindow.on('focus')
+  // Do NOT add duplicate app.on('browser-window-focus') handler here
+  // as it causes duplicate 'window-focus-restored' events
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -1,12 +1,40 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Store listener references to prevent accumulation on page navigation
+let focusRestoredCallback = null;
+let focusLostCallback = null;
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Window focus management
-  onWindowFocusRestored: (callback) => ipcRenderer.on('window-focus-restored', callback),
-  onWindowFocusLost: (callback) => ipcRenderer.on('window-focus-lost', callback),
-
+  // Window focus management - use wrapper to prevent listener accumulation
+  onWindowFocusRestored: (callback) => {
+    // Remove previous listener if exists to prevent accumulation
+    if (focusRestoredCallback) {
+      ipcRenderer.removeListener('window-focus-restored', focusRestoredCallback);
+    }
+    focusRestoredCallback = callback;
+    ipcRenderer.on('window-focus-restored', focusRestoredCallback);
+  },
+  onWindowFocusLost: (callback) => {
+    // Remove previous listener if exists to prevent accumulation
+    if (focusLostCallback) {
+      ipcRenderer.removeListener('window-focus-lost', focusLostCallback);
+    }
+    focusLostCallback = callback;
+    ipcRenderer.on('window-focus-lost', focusLostCallback);
+  },
+  // Cleanup function for page unload
+  removeWindowFocusListeners: () => {
+    if (focusRestoredCallback) {
+      ipcRenderer.removeListener('window-focus-restored', focusRestoredCallback);
+      focusRestoredCallback = null;
+    }
+    if (focusLostCallback) {
+      ipcRenderer.removeListener('window-focus-lost', focusLostCallback);
+      focusLostCallback = null;
+    }
+  },
 
   // Customer operations
   getCustomers: (options) => ipcRenderer.invoke('db:getCustomers', options),

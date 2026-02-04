@@ -532,6 +532,18 @@ class FishMarketDB {
       // Column already exists, ignore
     }
 
+    // ==== SCHEMA EVOLUTION v1.2 (Dual-Amount Model for Non-Financial Entries) ====
+    // Add display_amount column - stores optional UI/receipt amount for non-financial entries
+    // This separates accounting semantics (amount) from display semantics (display_amount)
+    // - Financial entries: amount > 0, display_amount = NULL or copy
+    // - Non-financial entries: amount = 0, display_amount = user's optional amount
+    try {
+      this.db.exec(`ALTER TABLE ledger_entries ADD COLUMN display_amount REAL NULL`);
+      console.log('Added display_amount column to ledger_entries table');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
     // ==== ADDITIONAL INDEXES FOR 100-500 TX/DAY SCALE ====
 
     // Index for is_void filtering in UI queries
@@ -1737,6 +1749,7 @@ class FishMarketDB {
   //   - Can be soft-deleted without reversal
   //
   // Architecture Contract v1.0: Validates invariants before insert
+  // Architecture Contract v1.2: Dual-amount model for non-financial entries
   addLedgerEntry(entry) {
     // Determine if this is a financial or informational entry
     const isFinancial = entry.affects_balance !== 0;
@@ -1753,39 +1766,44 @@ class FishMarketDB {
       throw new Error('LEDGER INVARIANT VIOLATION: amount must be > 0 for financial entries');
     }
 
-    // GUARD 3: Informational entries MUST NOT have a non-null amount
-    // This prevents accidentally treating 0 as informational
-    if (!isFinancial && entry.amount !== undefined && entry.amount !== null && entry.amount !== 0) {
-      console.warn(`LEDGER WARNING: Informational entry has amount=${entry.amount}. Setting to NULL.`);
-    }
-
-    // GUARD 4: entry_type must be CREDIT or DEBIT
+    // GUARD 3: entry_type must be CREDIT or DEBIT
     if (!['CREDIT', 'DEBIT'].includes(entry.entry_type)) {
       throw new Error('LEDGER INVARIANT VIOLATION: entry_type must be CREDIT or DEBIT');
     }
+
+    // ==== DUAL-AMOUNT MODEL (v1.2) ====
+    // - Financial entries: amount = user's amount (for balance calc), display_amount = NULL
+    // - Non-financial entries: amount = 0 (satisfies NOT NULL, doesn't affect balance), 
+    //                          display_amount = user's optional amount (for UI/receipts)
+
+    // Capture user's input amount for potential display use
+    const userAmount = entry.amount !== undefined && entry.amount !== null ? entry.amount : 0;
+
+    // Accounting amount: for balance calculation (0 for non-financial)
+    const accountingAmount = isFinancial ? entry.amount : 0;
+
+    // Display amount: for UI/receipts (only for non-financial entries with non-zero amounts)
+    const displayAmount = !isFinancial && userAmount > 0 ? userAmount : null;
 
     // WRITE-TIME ATOMICITY: Wrap insert + balance sync in transaction
     const insertEntry = this.db.transaction(() => {
       const stmt = this.db.prepare(`
         INSERT INTO ledger_entries (
-          entity_type, entity_id, entry_type, amount, reference_type, 
+          entity_type, entity_id, entry_type, amount, display_amount, reference_type, 
           description, entry_date, entry_time, affects_balance, is_void
         )
         VALUES (
-          @entity_type, @entity_id, @entry_type, @amount, 'manual', 
+          @entity_type, @entity_id, @entry_type, @amount, @display_amount, 'manual', 
           @description, @entry_date, @entry_time, @affects_balance, 0
         )
       `);
-
-      // For informational entries, store NULL for amount (not 0)
-      // This makes the financial/informational distinction unambiguous
-      const amountToStore = isFinancial ? entry.amount : null;
 
       const info = stmt.run({
         entity_type: entry.entity_type,
         entity_id: entry.entity_id,
         entry_type: entry.entry_type, // 'CREDIT' or 'DEBIT'
-        amount: amountToStore,
+        amount: accountingAmount,
+        display_amount: displayAmount,
         description: entry.description || null,
         entry_date: entry.entry_date || null,
         entry_time: entry.entry_time || null,
@@ -1803,6 +1821,8 @@ class FishMarketDB {
         entity_type: entry.entity_type,
         entity_id: entry.entity_id,
         entry_type: entry.entry_type,
+        accounting_amount: accountingAmount,
+        display_amount: displayAmount,
         affects_balance: isFinancial ? 1 : 0,
         reference_type: 'manual'
       });
